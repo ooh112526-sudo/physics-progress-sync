@@ -12,7 +12,7 @@
     
     <!-- 引入 Tailwind CSS -->
     <script src="https://cdn.tailwindcss.com"></script>
-    <!-- 引入 Phosphor Icons (防白屏字體圖示庫) -->
+    <!-- 引入 Phosphor Icons -->
     <script src="https://unpkg.com/@phosphor-icons/web"></script>
     
     <style>
@@ -33,7 +33,6 @@
         import { getAuth, signInAnonymously, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-auth.js";
         import { getFirestore, doc, setDoc, onSnapshot } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-firestore.js";
 
-        // 老師您的專屬金鑰
         const firebaseConfig = {
             apiKey: "AIzaSyBduUmDpYh6lv8v-86Tmiay_8xe2dPmehI",
             authDomain: "physics-sync-2026.firebaseapp.com",
@@ -52,7 +51,7 @@
 
     <script type="text/babel">
         const { useState, useEffect, useMemo, Fragment } = React;
-        const APP_VERSION = "v8.6.0 (究極無損復刻版)";
+        const APP_VERSION = "v8.6.1 (停課事件相容校準版)";
 
         const THEME_COLORS = [
             { id: 'sky', name: '晴空水藍', h: 199, s: 89, base: 'bg-sky-400', light: 'bg-sky-50', text: 'text-sky-800' },
@@ -64,7 +63,7 @@
             { id: 'amber', name: '奶油暖黃', h: 45, s: 93, base: 'bg-amber-400', light: 'bg-amber-50', text: 'text-amber-800' }
         ];
 
-        const WEEK_DAYS_DISPLAY = ['一', '二', '三', '四', '五', '六', '日'];
+        const WEEK_DAYS_DISPLAY = ['日', '一', '二', '三', '四', '五', '六'];
         const PERIODS = [1, 2, 3, 4, 5, 6, 7, 8];
         const DEFAULT_SYLLABUS = { exam1: [{ title: "1-1 物理學的發展", pages: 0 }, { title: "1-2 物理量單位", pages: 0 }], exam2: [{ title: "2-1 速度", pages: 0 }, { title: "2-2 加速度", pages: 0 }], exam3: [{ title: "3-1 牛頓定律", pages: 0 }] };
         
@@ -80,16 +79,13 @@
         };
 
         function App() {
-            // --- 系統基礎狀態 ---
             const [isFirebaseReady, setIsFirebaseReady] = useState(window.firebaseReady || false);
             const [user, setUser] = useState(null);
             const [isCloudLoaded, setIsCloudLoaded] = useState(false);
             const [syncKey, setSyncKey] = useState(() => localStorage.getItem('physics_sync_key') || ('PHY-' + Math.random().toString(36).substring(2, 7).toUpperCase()));
-            
             useEffect(() => localStorage.setItem('physics_sync_key', syncKey), [syncKey]);
             const [data, setData] = useState(initialData);
 
-            // --- 雲端連線邏輯 ---
             useEffect(() => { const h = () => setIsFirebaseReady(true); window.addEventListener('firebaseReady', h); return () => window.removeEventListener('firebaseReady', h); }, []);
             useEffect(() => { if (!isFirebaseReady || !window.firebase) return; window.firebase.signInAnonymously(window.firebase.auth).catch(e=>console.error(e)); const unsub = window.firebase.onAuthStateChanged(window.firebase.auth, setUser); return () => unsub(); }, [isFirebaseReady]);
             useEffect(() => {
@@ -107,7 +103,6 @@
                 window.firebase.setDoc(window.firebase.doc(window.firebase.db, 'artifacts', window.firebase.currentAppId, 'public', 'data', 'shared_progress', syncKey), { appData: data }, { merge: true }).catch(e=>console.error(e));
             }, [data, user, isCloudLoaded, syncKey]);
 
-            // --- UI 狀態 ---
             const [selectedYear, setSelectedYear] = useState("114");
             const [selectedSemester, setSelectedSemester] = useState("下學期");
             const [selectedCourseId, setSelectedCourseId] = useState('c1');
@@ -124,17 +119,23 @@
             const [inputSyncKey, setInputSyncKey] = useState('');
             const [activeExamKey, setActiveExamKey] = useState(null);
             const [activeSettingTab, setActiveSettingTab] = useState('common');
-            const [viewDate, setViewDate] = useState(new Date());
+            const [viewDate, setViewDate] = useState(new Date("2026-02-01"));
             
             const [formData, setFormData] = useState({ system: '技高一', name: '', color: 'sky', className: '', year: '114', semester: '下學期', importSource: 'none', logPage: '', logChapter: '', logFinishedChapters: [], logEvent: null, logEventText: '', holidayDate: '', holidayDesc: '', examData: { startDate: '', common: {}, v3: {}, s3: {} }, syllabusData: { exam1: [], exam2: [], exam3: [] } });
 
-            // --- 核心資料與輔助函數 ---
             const currentSemesterData = data[selectedYear]?.[selectedSemester] || { settings: { startDate: '', common: {}, v3: {}, s3: {}, holidays: [] }, courses: [] };
             const currentCourses = currentSemesterData.courses || [];
             const currentCourse = currentCourses.find(c => c.id === selectedCourseId) || currentCourses[0];
             const currentTheme = THEME_COLORS.find(t => t.id === (currentCourse?.themeId || 'sky')) || THEME_COLORS[0];
             
-            const getHoliday = (dateKey) => (currentSemesterData.settings.holidays || []).find(h => (typeof h === 'string' ? h : h.date) === dateKey);
+            // 🌟 核心修復：資料結構向下相容引擎 (Schema Evolution)
+            const normalizedHolidays = useMemo(() => {
+                const h = currentSemesterData.settings.holidays || [];
+                return h.map(item => typeof item === 'string' ? { date: item, desc: '國定假日' } : item);
+            }, [currentSemesterData.settings.holidays]);
+            
+            const getHoliday = (dateKey) => normalizedHolidays.find(h => h.date === dateKey);
+
             const formatDateKey = (d) => `${d.getFullYear()}-${(d.getMonth() + 1).toString().padStart(2, '0')}-${d.getDate().toString().padStart(2, '0')}`;
             const isToday = (date) => formatDateKey(date) === formatDateKey(new Date());
 
@@ -148,7 +149,7 @@
             };
 
             const getGlobalExams = (dateKey, settings) => {
-                const tracks = [ { id: 'common', label: '高一二', color: 'bg-amber-100 text-amber-800 border-amber-300' }, { id: 'v3', label: '技三', color: 'bg-orange-100 text-orange-800 border-orange-300' }, { id: 's3', label: '綜三', color: 'bg-fuchsia-100 text-fuchsia-800 border-fuchsia-300' } ];
+                const tracks = [ { id: 'common', label: '高一二', color: 'bg-amber-100 text-amber-800' }, { id: 'v3', label: '技三', color: 'bg-orange-100 text-orange-800' }, { id: 's3', label: '綜三', color: 'bg-fuchsia-100 text-fuchsia-800' } ];
                 const results = [];
                 tracks.forEach(t => {
                     const trackData = settings[t.id]; if (!trackData) return;
@@ -172,7 +173,6 @@
                 return `${selectedYear}/${parts[1]}/${dateArr.map(d => d.split('-')[2]).join('、')}`;
             };
 
-            // ⚡ 核心演算法：進度健康度計算
             const healthData = useMemo(() => {
                 if (!currentCourse || !currentSemesterData.settings.startDate) return {};
                 const testToday = new Date(currentDate); 
@@ -222,41 +222,23 @@
                 return result;
             }, [currentCourse, currentSemesterData.settings, currentDate]);
 
-            // 🌟 尋回功能: 精密的「時間邊界過濾」與「連堂歷史追溯」演算法
             const getDayClasses = (date) => {
-                const dayIdx = date.getDay();
-                const dateKey = formatDateKey(date);
-                const holidayObj = getHoliday(dateKey);
-                const result = [];
+                const dayIdx = date.getDay(); const dateKey = formatDateKey(date); const holidayObj = getHoliday(dateKey); const result = [];
                 const startDate = currentSemesterData.settings.startDate;
 
                 currentCourses.forEach(course => {
-                    // 🛑 時間結界 1：開學日之前，不顯示排課
                     if (startDate && dateKey < startDate) return;
 
                     let track = (course.system === '技高三' ? 'v3' : (course.system === '綜高三' ? 's3' : 'common'));
                     const trackData = currentSemesterData.settings[track] || {};
-                    const allExamDates = [ ...(trackData.exam1 || []), ...(trackData.exam2 || []), ...(trackData.exam3 || []) ];
-                    
-                    // 🛑 時間結界 2：第三次段考之後，不顯示排課
-                    if (allExamDates.length > 0) {
-                        const lastExamDate = [...allExamDates].sort().pop();
-                        if (dateKey > lastExamDate) return;
-                    }
+                    const allExamDates = [ ...(trackData.exam1 || []), ...(trackData.exam2 || []), ...(trackData.exam3 || []) ].sort();
+                    if (allExamDates.length > 0) { const lastExamDate = allExamDates[allExamDates.length - 1]; if (dateKey > lastExamDate) return; }
 
                     const examName = getExamName(dateKey, course.system, currentSemesterData.settings);
 
                     course.classes.forEach(cls => {
                         const scheds = cls.schedule?.filter(s => s.day === dayIdx).map(s => s.period).sort((a,b)=>a-b) || [];
-                        
-                        // 🔗 連堂群組判定演算法
-                        const getBlock = (period, sortedScheds) => {
-                            let block = [period]; let curr = period;
-                            while (sortedScheds.includes(curr - 1)) { block.push(curr - 1); curr--; }
-                            curr = period;
-                            while (sortedScheds.includes(curr + 1)) { block.push(curr + 1); curr++; }
-                            return block.sort((a,b)=>a-b);
-                        };
+                        const getBlock = (period, sortedScheds) => { let block = [period]; let curr = period; while (sortedScheds.includes(curr - 1)) { block.push(curr - 1); curr--; } curr = period; while (sortedScheds.includes(curr + 1)) { block.push(curr + 1); curr++; } return block.sort((a,b)=>a-b); };
 
                         scheds.forEach(p => {
                             const currentBlock = getBlock(p, scheds);
@@ -271,39 +253,19 @@
                             const hasFutureLogToday = futureLogsToday.length > 0;
                             const firstFutureLogToday = hasFutureLogToday ? futureLogsToday[0] : null;
 
-                            const pastLogs = cls.logs?.filter(l => {
-                                if (l.date < dateKey) return true;
-                                if (l.date === dateKey && l.period < minPeriodInBlock) return true;
-                                return false;
-                            }).sort((a, b) => {
-                                if (a.date !== b.date) return a.date.localeCompare(b.date);
-                                return a.period - b.period;
-                            }) || [];
+                            const pastLogs = cls.logs?.filter(l => { if (l.date < dateKey) return true; if (l.date === dateKey && l.period < minPeriodInBlock) return true; return false; }).sort((a, b) => { if (a.date !== b.date) return a.date.localeCompare(b.date); return a.period - b.period; }) || [];
                             const lastPastLog = pastLogs.length > 0 ? pastLogs[pastLogs.length - 1] : null;
 
-                            let logPrefix = '上次: ';
-                            let logText = '無紀錄';
-                            let isSpecialEvent = false;
-                            let isEffectivelyLogged = hasBlockLog || hasFutureLogToday;
+                            let logPrefix = '上次: '; let logText = '無紀錄'; let isSpecialEvent = false; let isEffectivelyLogged = hasBlockLog || hasFutureLogToday;
 
                             if (hasBlockLog) {
                                 logPrefix = '今日: ';
-                                if (latestBlockLog.event) {
-                                    isSpecialEvent = true;
-                                    const evtMap = { quiz: '小考', lab: '實驗', study: '自修', other: '活動' };
-                                    logText = `${evtMap[latestBlockLog.event]}${latestBlockLog.eventText ? `:${latestBlockLog.eventText}` : ''}`;
-                                } else {
-                                    logText = `${latestBlockLog.chapter.split(' ')[0]}(P${latestBlockLog.page})`;
-                                }
+                                if (latestBlockLog.event) { isSpecialEvent = true; const evtMap = { quiz: '小考', lab: '實驗', study: '自修', other: '活動' }; logText = `${evtMap[latestBlockLog.event]}${latestBlockLog.eventText ? `:${latestBlockLog.eventText}` : ''}`; } 
+                                else { logText = `${latestBlockLog.chapter.split(' ')[0]}(P${latestBlockLog.page})`; }
                             } else if (hasFutureLogToday) {
                                 logPrefix = '今日: ';
-                                if (firstFutureLogToday.event) {
-                                    isSpecialEvent = true;
-                                    const evtMap = { quiz: '小考', lab: '實驗', study: '自修', other: '活動' };
-                                    logText = `${evtMap[firstFutureLogToday.event]}${firstFutureLogToday.eventText ? `:${firstFutureLogToday.eventText}` : ''}`;
-                                } else {
-                                    logText = `${firstFutureLogToday.chapter.split(' ')[0]}(P${firstFutureLogToday.page})`;
-                                }
+                                if (firstFutureLogToday.event) { isSpecialEvent = true; const evtMap = { quiz: '小考', lab: '實驗', study: '自修', other: '活動' }; logText = `${evtMap[firstFutureLogToday.event]}${firstFutureLogToday.eventText ? `:${firstFutureLogToday.eventText}` : ''}`; } 
+                                else { logText = `${firstFutureLogToday.chapter.split(' ')[0]}(P${firstFutureLogToday.page})`; }
                             } else if (lastPastLog) {
                                 logText = `${lastPastLog.chapter.split(' ')[0]}(P${lastPastLog.page})`;
                             }
@@ -320,7 +282,6 @@
                 return result.sort((a, b) => a.period - b.period);
             };
 
-            // --- 視窗與操作函數 ---
             const openModal = (type, extra = null) => {
                 setModalType(type);
                 if (type === 'classJournal') { 
@@ -336,10 +297,7 @@
                 else if (type === 'addCourse') { setFormData({ ...formData, name: '', color: 'sky', system: '技高一' }); }
                 else if (type === 'addClass') { setFormData({ ...formData, className: '' }); }
                 else if (type === 'editSchedule') { setEditingClassId(extra); }
-                else if (type === 'semesterSettings') { 
-                    setFormData({ ...formData, examData: JSON.parse(JSON.stringify(currentSemesterData.settings)) }); 
-                    setActiveSettingTab('common'); setActiveExamKey(null); setViewDate(new Date(currentDate)); 
-                }
+                else if (type === 'semesterSettings') { setFormData({ ...formData, examData: JSON.parse(JSON.stringify(currentSemesterData.settings)) }); setActiveSettingTab('common'); setActiveExamKey(null); setViewDate(new Date(currentDate)); }
                 else if (type === 'editSyllabus') { setFormData({ ...formData, syllabusData: JSON.parse(JSON.stringify(currentCourses.find(c => c.id === extra).syllabus || DEFAULT_SYLLABUS)) }); setSelectedCourseId(extra); setExpandedSyllabusTab('exam1'); }
                 else if (type === 'devicePairing') { setInputSyncKey(''); }
                 else if (type === 'confirmDelete') { setDeleteTarget(extra); }
@@ -384,55 +342,11 @@
             };
 
             const toggleSchedule = (dayIndex, period) => { const newData = { ...data }; const cls = newData[selectedYear][selectedSemester].courses.find(c => c.id === selectedCourseId)?.classes.find(c => c.id === editingClassId); if (cls) { const exists = cls.schedule.find(s => s.day === dayIndex && s.period === period); if (exists) cls.schedule = cls.schedule.filter(s => !(s.day === dayIndex && s.period === period)); else cls.schedule.push({ day: dayIndex, period }); setData(newData); } };
-
-            const getConflictingClassName = (day, period) => {
-                for (const course of currentCourses) {
-                    for (const cls of course.classes) {
-                        if (cls.id === editingClassId) continue;
-                        if (cls.schedule?.some(s => s.day === day && s.period === period)) return cls.name;
-                    }
-                }
-                return null;
-            };
-
-            const handleNextProgress = () => {
-                if(!currentCourse || !currentCourse.syllabus) return;
-                const currentCh = formData.logChapter;
-                const newFinished = formData.logFinishedChapters.includes(currentCh) ? formData.logFinishedChapters : [...formData.logFinishedChapters, currentCh];
-                let targetPage = formData.logPage; 
-                const allChapters = [...(currentCourse.syllabus.exam1 || []), ...(currentCourse.syllabus.exam2 || []), ...(currentCourse.syllabus.exam3 || [])];
-                const currentChData = allChapters.find(ch => ch.title === currentCh);
-                if (currentChData && currentChData.pages > 0) targetPage = currentChData.pages.toString();
-                setFormData({ ...formData, logFinishedChapters: newFinished, logPage: targetPage });
-            };
-
-            // 💡 尋回功能 1-B: 日曆輔助演算法 (為了段考日期點選)
-            const getDaysInMonth = (date) => {
-                const d = new Date(date.getFullYear(), date.getMonth() + 1, 0);
-                const firstDay = new Date(date.getFullYear(), date.getMonth(), 1).getDay();
-                return { firstDay: firstDay === 0 ? 6 : firstDay - 1, days: d.getDate() };
-            };
-
-            // 💡 尋回功能 1-C: 段考日期視覺化點擊切換邏輯
-            const toggleDateInExam = (dateStr) => {
-                const newExamData = { ...formData.examData };
-                if (!newExamData[activeSettingTab]) newExamData[activeSettingTab] = {};
-                const dates = newExamData[activeSettingTab][activeExamKey] || [];
-                if (dates.includes(dateStr)) {
-                    newExamData[activeSettingTab][activeExamKey] = dates.filter(d => d !== dateStr);
-                } else {
-                    newExamData[activeSettingTab][activeExamKey] = [...dates, dateStr].sort();
-                }
-                setFormData({ ...formData, examData: newExamData });
-            };
-
-            const moveSyllabus = (exam, index, direction) => {
-                const newSyllabus = { ...formData.syllabusData };
-                const arr = newSyllabus[exam];
-                if (direction === -1 && index > 0) [arr[index], arr[index-1]] = [arr[index-1], arr[index]];
-                else if (direction === 1 && index < arr.length - 1) [arr[index], arr[index+1]] = [arr[index+1], arr[index]];
-                setFormData({ ...formData, syllabusData: newSyllabus });
-            };
+            const getConflictingClassName = (day, period) => { for (const course of currentCourses) { for (const cls of course.classes) { if (cls.id === editingClassId) continue; if (cls.schedule?.some(s => s.day === day && s.period === period)) return cls.name; } } return null; };
+            const handleNextProgress = () => { if(!currentCourse || !currentCourse.syllabus) return; const currentCh = formData.logChapter; const newFinished = formData.logFinishedChapters.includes(currentCh) ? formData.logFinishedChapters : [...formData.logFinishedChapters, currentCh]; let targetPage = formData.logPage; const allChapters = [...(currentCourse.syllabus.exam1 || []), ...(currentCourse.syllabus.exam2 || []), ...(currentCourse.syllabus.exam3 || [])]; const currentChData = allChapters.find(ch => ch.title === currentCh); if (currentChData && currentChData.pages > 0) targetPage = currentChData.pages.toString(); setFormData({ ...formData, logFinishedChapters: newFinished, logPage: targetPage }); };
+            const getDaysInMonth = (date) => { const d = new Date(date.getFullYear(), date.getMonth() + 1, 0); const firstDay = new Date(date.getFullYear(), date.getMonth(), 1).getDay(); return { firstDay: firstDay === 0 ? 6 : firstDay - 1, days: d.getDate() }; };
+            const toggleDateInExam = (dateStr) => { const newExamData = { ...formData.examData }; if (!newExamData[activeSettingTab]) newExamData[activeSettingTab] = {}; const dates = newExamData[activeSettingTab][activeExamKey] || []; if (dates.includes(dateStr)) newExamData[activeSettingTab][activeExamKey] = dates.filter(d => d !== dateStr); else newExamData[activeSettingTab][activeExamKey] = [...dates, dateStr].sort(); setFormData({ ...formData, examData: newExamData }); };
+            const moveSyllabus = (exam, index, direction) => { const newSyllabus = { ...formData.syllabusData }; const arr = newSyllabus[exam]; if (direction === -1 && index > 0) [arr[index], arr[index-1]] = [arr[index-1], arr[index]]; else if (direction === 1 && index < arr.length - 1) [arr[index], arr[index+1]] = [arr[index+1], arr[index]]; setFormData({ ...formData, syllabusData: newSyllabus }); };
 
             let activeLogGroups = ['exam1', 'exam2', 'exam3']; 
             if (modalType === 'classJournal' && editingCell && currentCourse) {
@@ -461,11 +375,10 @@
             const moveDate = (amount, unit) => { const d = new Date(currentDate); if (unit === 'week') d.setDate(d.getDate() + amount * 7); else d.setMonth(d.getMonth() + amount); setCurrentDate(d); };
             const weekDays = useMemo(() => { const d = new Date(currentDate); const day = d.getDay(); d.setDate(d.getDate() - day + (day === 0 ? -6 : 1)); return Array.from({ length: 7 }, (_, i) => { const n = new Date(d); n.setDate(n.getDate() + i); return n; }); }, [currentDate]);
 
-            // --- 匯出匯入備份 ---
-            const handleExport = () => { try { const blob = new Blob([JSON.stringify(data, null, 2)], { type: "application/json" }); const url = URL.createObjectURL(blob); const link = document.createElement('a'); link.href = url; link.download = `physics_backup_${new Date().toISOString().slice(0, 10)}.json`; link.click(); } catch (e) { console.error(e); } };
+            const handleExport = () => { try { const blob = new Blob([JSON.stringify(data, null, 2)], { type: "application/json" }); const url = URL.createObjectURL(blob); const link = document.createElement('a'); link.href = url; link.download = `physics_backup_${new Date().toISOString().slice(0, 10).replace(/-/g, "")}.json`; link.click(); } catch (e) { console.error(e); } };
             const handleImport = (e) => { const file = e.target.files[0]; if (!file) return; const reader = new FileReader(); reader.onload = (event) => { try { const importedData = JSON.parse(event.target.result); if (importedData) { setData(importedData); setIsModalOpen(false); } } catch (err) { alert("檔案解析失敗"); } }; reader.readAsText(file); e.target.value = ''; };
 
-            if (!isFirebaseReady) return <div className="h-screen flex flex-col items-center justify-center bg-slate-50 text-slate-400"><i className="ph-bold ph-cloud-arrow-up text-5xl mb-4 animate-pulse text-indigo-300"></i><p className="font-bold">連線雲端金庫中...</p></div>;
+            if (!isFirebaseReady) return <div className="h-screen flex flex-col items-center justify-center bg-slate-50 text-slate-400"><i className="ph-bold ph-cloud-arrow-up text-5xl mb-4 animate-pulse text-indigo-300"></i><p className="font-bold tracking-widest text-sm">正在連線至雲端金庫...</p></div>;
 
             return (
                 <div className="flex h-screen bg-slate-50 font-sans text-slate-900 overflow-hidden">
@@ -547,6 +460,13 @@
                                             <div className={`absolute top-0 right-0 w-32 h-32 opacity-5 rounded-full -mr-10 -mt-10 ${currentTheme.base}`}></div>
                                         </div>
                                         
+                                        <div className="flex justify-between items-center pt-2">
+                                            <h2 className="text-xl font-black text-slate-700">班級列表</h2>
+                                            <div className="text-xs font-bold text-slate-400 flex items-center gap-2">
+                                                <span className="w-2 h-2 rounded-full bg-emerald-400"></span> 基準點: 快照週結算
+                                            </div>
+                                        </div>
+
                                         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
                                             {currentCourse.classes?.map(cls => {
                                                 const health = healthData[cls.id] || { periods: '?', colorClass: 'bg-slate-200', textClass: 'text-slate-900', barBgClass: 'bg-slate-100 text-slate-500', percentage: 0, msg: '尚未結算' };
@@ -555,11 +475,22 @@
                                                     <div className="flex justify-between items-center mb-4"><span className="text-lg font-black text-slate-700">{cls.name}</span><button onClick={() => openModal('editSchedule', cls.id)} className="p-2 bg-slate-50 hover:text-indigo-600 rounded-xl"><i className="ph-bold ph-clock text-sm"></i></button></div>
                                                     <div className="flex flex-wrap gap-2 mb-4">
                                                         {cls.schedule.length > 0 
-                                                            ? [...cls.schedule].sort((a,b)=>a.day!==b.day ? a.day-b.day : a.period-b.period).map((s, i) => <span key={i} className={`text-[11px] font-black px-2 py-1 rounded-lg ${currentTheme.light} ${currentTheme.text}`}>週{['日','一','二','三','四','五','六'][s.day]}第{s.period}節</span>) 
+                                                            ? [...cls.schedule].sort((a,b)=>a.day!==b.day ? a.day-b.day : a.period-b.period).map((s, i) => <span key={i} className={`text-[11px] font-black px-2 py-1 rounded-lg ${currentTheme.light} ${currentTheme.text}`}>週{WEEK_DAYS_DISPLAY[s.day]}第{s.period}節</span>) 
                                                             : <span className="text-xs text-slate-300 italic">尚未設定課表</span>
                                                         }
                                                     </div>
-                                                    <div className="pt-4 border-t border-slate-50 flex justify-between items-end"><div className="flex-1"><div className="flex justify-between items-center mb-2"><span className={`text-[10px] font-bold px-2 py-0.5 rounded-full ${health.barBgClass}`}>{health.msg}</span><span className={`text-base font-black ${health.textClass}`}>{health.periods} <span className="text-xs">節</span></span></div><div className="h-1.5 w-full bg-slate-100 rounded-full overflow-hidden"><div className={`h-full transition-all duration-1000 ${health.colorClass}`} style={{ width: `${health.percentage}%` }}></div></div></div></div>
+                                                    <div className="pt-4 border-t border-slate-50 flex justify-between items-end">
+                                                        <div className="flex-1">
+                                                            <div className="flex justify-between items-center mb-2">
+                                                                <div className="flex items-center gap-2">
+                                                                    <span className="text-slate-400 font-black text-[14px] uppercase tracking-widest">剩餘可用</span>
+                                                                    <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full ${health.barBgClass}`}>{health.msg}</span>
+                                                                </div>
+                                                                <span className={`text-xl font-black ${health.textClass}`}>{health.periods} <span className="text-sm">節</span></span>
+                                                            </div>
+                                                            <div className="h-2 w-full bg-slate-100 rounded-full overflow-hidden"><div className={`h-full transition-all duration-1000 ${health.colorClass}`} style={{ width: `${health.percentage}%` }}></div></div>
+                                                        </div>
+                                                    </div>
                                                 </div>
                                             )})}
                                             <button onClick={() => openModal('addClass')} className="bg-slate-50 rounded-[32px] border-2 border-dashed border-slate-200 p-6 flex flex-col items-center justify-center gap-2 text-slate-400 font-black hover:bg-white hover:border-indigo-300 hover:text-indigo-500 transition-all min-h-[140px]"><i className="ph-bold ph-plus text-2xl"></i> 建立新班級</button>
@@ -572,7 +503,7 @@
                                             <div className="min-w-[900px]">
                                                 <div className="grid border-b border-slate-100 bg-slate-50/50" style={{ gridTemplateColumns: '60px 2fr 2fr 2fr 2fr 2fr 1fr 1fr' }}>
                                                     <div className="p-4 flex items-center justify-center border-r"><i className="ph-bold ph-clock text-slate-400"></i></div>
-                                                    {weekDays.map((d, i) => (<div key={i} className={`p-4 text-center border-r ${isToday(d)?'bg-indigo-50/50':''}`}><div className="text-[10px] font-black text-slate-400">週{WEEK_DAYS_DISPLAY[i]}</div><div className={`text-lg font-black ${isToday(d)?'text-indigo-600':''}`}>{d.getDate()}</div></div>))}
+                                                    {weekDays.map((d, i) => (<div key={i} className={`p-4 text-center border-r ${isToday(d)?'bg-indigo-50/50':''}`}><div className="text-[10px] font-black text-slate-400">週{WEEK_DAYS_DISPLAY[d.getDay()]}</div><div className={`text-lg font-black ${isToday(d)?'text-indigo-600':''}`}>{d.getDate()}</div></div>))}
                                                 </div>
                                                 {PERIODS.map(p => (
                                                     <div key={p} className="grid border-b border-slate-100" style={{ gridTemplateColumns: '60px 2fr 2fr 2fr 2fr 2fr 1fr 1fr' }}>
@@ -583,13 +514,13 @@
                                                                 <div key={i} className="p-2 border-r min-h-[90px] relative hover:bg-slate-50/50 transition-colors">
                                                                     {classes.map(cls => {
                                                                         const isBlocked = cls.isHoliday || cls.isExam;
-                                                                        let bgClass = 'bg-sky-50 border-sky-100 hover:shadow-md';
+                                                                        let bgClass = 'bg-sky-50 border-sky-100 hover:shadow-md active:scale-95';
                                                                         let titleColor = cls.courseTheme.text;
                                                                         let descColor = 'text-slate-500';
                                                                         let descText = `${cls.logPrefix}${cls.logText}`;
                                                                         
-                                                                        if (cls.isHoliday) { bgClass = 'bg-slate-50 border-dashed border-slate-200 opacity-70'; titleColor = 'text-slate-400'; descColor = 'text-rose-400'; descText = `🌴 停課: ${cls.holidayDesc}`; }
-                                                                        else if (cls.isExam) { bgClass = 'bg-amber-50 border-amber-200 opacity-90'; titleColor = 'text-amber-700'; descColor = 'text-amber-600'; descText = `📝 測驗: ${cls.examName}`; }
+                                                                        if (cls.isHoliday) { bgClass = 'bg-slate-50 border-dashed border-slate-200 cursor-not-allowed opacity-80'; titleColor = 'text-slate-400'; descColor = 'text-rose-400'; descText = `🌴 停課: ${cls.holidayDesc}`; }
+                                                                        else if (cls.isExam) { bgClass = 'bg-amber-50 border-amber-200 cursor-not-allowed shadow-sm opacity-90'; titleColor = 'text-amber-700'; descColor = 'text-amber-600'; descText = `📝 測驗: ${cls.examName}`; }
                                                                         else if (!cls.hasLog) { bgClass = 'bg-white border-slate-100 hover:shadow-md'; }
 
                                                                         return (
@@ -597,9 +528,8 @@
                                                                                 <div className={`font-black text-[15px] leading-tight mb-1 ${titleColor}`}>{cls.name}</div>
                                                                                 <div className={`text-[11px] font-bold truncate ${descColor}`}>{descText}</div>
                                                                                 
-                                                                                {/* 🌟 尋回功能: 特殊活動藍色光條與打勾標記 */}
                                                                                 {!isBlocked && cls.hasLog && <i className={`ph-bold ph-check-circle absolute top-3 right-3 text-lg ${cls.isSpecialEvent ? 'text-blue-500' : 'text-emerald-500'}`} />}
-                                                                                {!isBlocked && <div className={`absolute bottom-0 left-0 h-[5px] transition-all duration-500 ${cls.hasLog ? 'w-full' : 'w-0'} ${cls.isSpecialEvent ? 'bg-blue-500' : 'bg-emerald-400'}`}></div>}
+                                                                                {!isBlocked && <div className={`absolute bottom-0 left-0 h-[6px] transition-all duration-500 ${cls.hasLog ? 'w-full' : 'w-0'} ${cls.isSpecialEvent ? 'bg-blue-500' : 'bg-emerald-400'}`}></div>}
                                                                             </button>
                                                                         );
                                                                     })}
@@ -614,12 +544,13 @@
                                                 <div className="grid grid-cols-7 mb-4 border-b border-slate-50 pb-4">{WEEK_DAYS_DISPLAY.map(d => <div key={d} className={`text-center text-xs font-black py-2 ${d === '六' || d === '日' ? 'text-red-400' : 'text-slate-400'}`}>週{d}</div>)}</div>
                                                 <div className="grid grid-cols-7 gap-3">
                                                     {(() => {
-                                                        const y=currentDate.getFullYear(); const m=currentDate.getMonth(); let fd=new Date(y,m,1).getDay(); const offset=fd===0?6:fd-1; const dim=new Date(y,m+1,0).getDate(); const grid=[];
+                                                        const y=currentDate.getFullYear(); const m=currentDate.getMonth(); let fd=new Date(y,m,1).getDay(); const offset=fd; const dim=new Date(y,m+1,0).getDate(); const grid=[];
                                                         for(let i=0;i<offset;i++) grid.push(<div key={`e-${i}`} className="aspect-square opacity-0"/>);
                                                         for(let d=1;d<=dim;d++) {
                                                             const dateObj=new Date(y,m,d); const dk=formatDateKey(dateObj); const ho=getHoliday(dk); const isH=!!ho; const classes=getDayClasses(dateObj); const exams=getGlobalExams(dk, currentSemesterData.settings);
                                                             grid.push(
                                                                 <div key={d} onClick={()=>{if(isH) openModal('editHoliday',dk); else {setCurrentDate(dateObj);setCalendarViewMode('week');}}} className={`aspect-square rounded-[24px] border p-2 flex flex-col items-center cursor-pointer group ${isToday(dateObj)?'ring-2 ring-indigo-500':''} ${isH?'bg-rose-50 border-rose-100':'bg-white hover:bg-slate-50'}`}>
+                                                                    {/* 🌟 尋回: stopPropagation 確保不會誤跳轉 */}
                                                                     {!isH && <button onClick={(e)=>{e.stopPropagation();openModal('editHoliday',dk);}} className="absolute top-2 right-2 p-1 opacity-0 group-hover:opacity-100 hover:text-rose-500"><i className="ph-bold ph-flag text-xs"></i></button>}
                                                                     <span className={`text-xs font-black mb-1 ${isH?'text-rose-500':'text-slate-600'}`}>{d}</span>
                                                                     {isH ? (<div className="text-center"><i className="ph-fill ph-tree-palm text-rose-400"></i><div className="text-[9px] font-bold text-rose-600 leading-tight">{ho.desc}</div></div>) : (
@@ -673,7 +604,22 @@
 
                                     {modalType === 'addCourse' && (<div className="space-y-4"><select value={formData.system} onChange={(e)=>setFormData({...formData, system:e.target.value})} className="w-full p-4 bg-slate-50 rounded-2xl border-2 font-bold outline-none">{['技高一','技高二','技高三','綜高一','綜高二','綜高三'].map(s=><option key={s} value={s}>{s}</option>)}</select><input type="text" value={formData.name} onChange={(e)=>setFormData({...formData, name:e.target.value})} className="w-full p-4 bg-slate-50 rounded-2xl border-2 font-bold outline-none" placeholder="科目名稱，如: 物理B" /><div className="flex justify-center gap-2">{THEME_COLORS.map(c=><button key={c.id} onClick={()=>setFormData({...formData, color:c.id})} className={`w-8 h-8 rounded-full ${c.base} ${formData.color===c.id?'ring-4 ring-slate-200':''}`}/>)}</div><button onClick={handleSave} className="w-full py-4 bg-indigo-600 text-white font-black rounded-2xl">確認新增</button></div>)}
                                     {modalType === 'addClass' && (<div className="space-y-4"><input type="text" value={formData.className} onChange={(e)=>setFormData({...formData, className:e.target.value})} className="w-full p-4 bg-slate-50 rounded-2xl border-2 font-bold text-center outline-none" placeholder="班級名稱，如: 電一智" /><button onClick={handleSave} className="w-full py-4 bg-indigo-600 text-white font-black rounded-2xl">確認新增</button></div>)}
-                                    {modalType === 'confirmDelete' && (<div className="text-center space-y-6"><i className="ph-fill ph-warning-circle text-rose-500 text-6xl mx-auto animate-pulse"></i><h4 className="text-lg font-black">確定刪除「{deleteTarget?.name}」？</h4><button onClick={handleConfirmDelete} className="w-full py-4 bg-rose-500 text-white font-black rounded-2xl">我確定，刪除</button></div>)}
+                                    
+                                    {modalType === 'confirmDelete' && (
+                                        <div className="text-center space-y-6">
+                                            <i className="ph-fill ph-warning-circle text-rose-500 text-[80px] mx-auto animate-pulse"></i>
+                                            <h4 className="text-2xl font-black text-slate-800">確定刪除「{deleteTarget?.name}」？</h4>
+                                            <div className="text-sm font-bold text-rose-600 leading-relaxed bg-rose-50 p-5 rounded-3xl border border-rose-200">
+                                                ⚠️ 嚴重警告：<br/>
+                                                刪除後，該{deleteTarget?.type === 'course' ? '課程底下的所有班級、' : ''}課表設定與整學期的教學日誌將會<span className="underline">永久消失</span>，且會同步從雲端資料庫中抹除！
+                                            </div>
+                                            <div className="flex gap-3">
+                                                <button onClick={() => setIsModalOpen(false)} className="flex-1 py-4 bg-slate-100 text-slate-500 font-black rounded-2xl hover:bg-slate-200 transition-all">取消</button>
+                                                <button onClick={handleConfirmDelete} className="flex-1 py-4 bg-rose-500 text-white font-black rounded-2xl shadow-xl shadow-rose-100 hover:bg-rose-600 transition-all">我確定，刪除</button>
+                                            </div>
+                                        </div>
+                                    )}
+
                                     {modalType === 'devicePairing' && (<div className="space-y-6"><div className="p-6 bg-indigo-50 rounded-[32px] text-center"><p className="text-[10px] font-black text-indigo-400 mb-2">本機同步金鑰</p><div className="flex justify-center gap-3"><span className="text-3xl font-black text-indigo-700 tracking-widest">{syncKey}</span></div></div><div className="flex gap-2"><input type="text" value={inputSyncKey} onChange={(e)=>setInputSyncKey(e.target.value.toUpperCase())} placeholder="PHY-XXXXX" className="flex-1 p-4 bg-slate-50 border-2 rounded-2xl font-black text-center tracking-widest uppercase outline-none" /><button onClick={() => { if(inputSyncKey.length > 3){ setSyncKey(inputSyncKey); setIsModalOpen(false); } }} className="px-6 bg-slate-800 text-white rounded-2xl font-black">連線</button></div></div>)}
                                     
                                     {modalType === 'classJournal' && (
@@ -708,16 +654,33 @@
                                             </div>
 
                                             <div className="flex gap-2 justify-center mt-4 border-t pt-4">
-                                                {[{id:'quiz',l:'小考',i:'ph-pencil-simple'},{id:'lab',l:'實驗',i:'ph-flask'},{id:'study',l:'自修',i:'ph-book-open'}].map(evt=><button key={evt.id} onClick={()=>setFormData({...formData, logEvent:formData.logEvent===evt.id?null:evt.id})} className={`px-4 py-2 rounded-xl text-xs font-black border-2 ${formData.logEvent===evt.id?'bg-indigo-50 border-indigo-400 text-indigo-600':'bg-slate-50 border-slate-100 text-slate-500'}`}><i className={`ph-bold ${evt.i} mr-1`}></i>{evt.l}</button>)}
+                                                {[{id:'quiz',l:'小考',i:'ph-pencil-simple'},{id:'lab',l:'實驗',i:'ph-flask'},{id:'study',l:'自修',i:'ph-book-open'},{id:'other',l:'其他',i:'ph-balloon'}].map(evt=><button key={evt.id} onClick={()=>setFormData({...formData, logEvent:formData.logEvent===evt.id?null:evt.id})} className={`flex-1 py-2 rounded-xl text-xs font-black border-2 ${formData.logEvent===evt.id?'bg-indigo-50 border-indigo-400 text-indigo-600':'bg-slate-50 border-slate-100 text-slate-500'}`}><i className={`ph-bold ${evt.i} mr-1`}></i>{evt.l}</button>)}
                                             </div>
-                                            {formData.logEvent && (<input type="text" value={formData.logEventText} onChange={(e) => setFormData({...formData, logEventText: e.target.value})} placeholder={formData.logEvent === 'quiz' ? '輸入考試範圍' : formData.logEvent === 'lab' ? '輸入實驗名稱' : '活動說明'} className="w-full px-4 py-2 bg-white border-2 border-indigo-100 rounded-xl text-sm font-bold text-slate-700 outline-none mt-2" />)}
+                                            {formData.logEvent && (<input type="text" value={formData.logEventText} onChange={(e) => setFormData({...formData, logEventText: e.target.value})} placeholder={formData.logEvent === 'quiz' ? '輸入考試範圍' : formData.logEvent === 'lab' ? '輸入實驗名稱' : '活動說明'} className="w-full px-4 py-3 bg-white border-2 border-indigo-100 rounded-xl text-sm font-bold text-slate-700 outline-none mt-2 shadow-sm" />)}
                                             <button onClick={handleSave} className="w-full py-4 bg-slate-900 text-white font-black rounded-2xl shadow-xl mt-4">儲存進度紀錄</button>
                                         </div>
                                     )}
                                     
-                                    {modalType === 'editSchedule' && (<div className="space-y-4 overflow-x-auto"><div className="grid grid-cols-6 gap-1 min-w-[300px]"><div/>{['一','二','三','四','五'].map(d=><div key={d} className="text-center text-[10px] font-black text-slate-400">週{d}</div>)}{PERIODS.map(p=>(<Fragment key={p}><div className="flex items-center justify-center text-[10px] font-bold text-slate-400">第{p}節</div>{[1,2,3,4,5].map(dIdx=>{ const isSel = currentCourse?.classes.find(c=>c.id===editingClassId)?.schedule.some(s=>s.day===dIdx&&s.period===p); const conflictName = getConflictingClassName(dIdx, p); const hasConflict = isSel && conflictName; return <button key={`${dIdx}-${p}`} onClick={()=>toggleSchedule(dIdx, p)} className={`h-10 rounded-lg border-2 transition-all relative flex flex-col items-center justify-center ${isSel?'bg-indigo-600 border-indigo-600 text-white':hasConflict?'border-rose-400 ring-2 ring-rose-200 bg-rose-50':'bg-slate-50 border-slate-100 hover:bg-slate-100'}`}>{isSel?<i className="ph-bold ph-plus"></i>:conflictName?<span className="text-[8px] font-black opacity-60 text-rose-500 scale-90">{conflictName}</span>:null}</button> })}</Fragment>))}</div></div>)}
+                                    {modalType === 'editSchedule' && (
+                                        <div className="space-y-4 overflow-x-auto">
+                                            <div className="grid grid-cols-6 gap-1 min-w-[300px]">
+                                                <div/>
+                                                {['一','二','三','四','五'].map(d=><div key={d} className="text-center text-[10px] font-black text-slate-400">週{d}</div>)}
+                                                {PERIODS.map(p=>(
+                                                    <Fragment key={p}>
+                                                        <div className="flex items-center justify-center text-[10px] font-bold text-slate-400">第{p}</div>
+                                                        {[1,2,3,4,5].map(dIdx=>{ 
+                                                            const isSel = currentCourse?.classes.find(c=>c.id===editingClassId)?.schedule.some(s=>s.day===dIdx&&s.period===p); 
+                                                            const conflictName = getConflictingClassName(dIdx, p); 
+                                                            const hasConflict = isSel && conflictName; 
+                                                            return <button key={`${dIdx}-${p}`} onClick={()=>toggleSchedule(dIdx, p)} className={`h-10 rounded-lg border-2 transition-all relative flex flex-col items-center justify-center ${isSel?'bg-indigo-600 border-indigo-600 text-white':hasConflict?'border-rose-400 ring-2 ring-rose-200 bg-rose-50':'bg-slate-50 border-slate-100 hover:bg-slate-100'}`}>{isSel?<i className="ph-bold ph-plus"></i>:conflictName?<span className="text-[8px] font-black opacity-60 text-rose-500 scale-90 truncate w-full px-1">{conflictName}</span>:null}</button> 
+                                                        })}
+                                                    </Fragment>
+                                                ))}
+                                            </div>
+                                        </div>
+                                    )}
                                     
-                                    {/* 💡 尋回功能 2: 視覺化月曆選取器 */}
                                     {modalType === 'semesterSettings' && (
                                         <div className="space-y-6">
                                             <div className="bg-slate-50 p-4 rounded-2xl flex justify-between items-center"><span className="text-sm font-black text-slate-700">學期開學日</span><input type="date" value={formData.examData.startDate||''} onChange={(e)=>setFormData({...formData, examData:{...formData.examData, startDate:e.target.value}})} className="p-2 rounded-xl outline-none" /></div>
