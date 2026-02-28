@@ -33,6 +33,7 @@
         import { getAuth, signInAnonymously, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-auth.js";
         import { getFirestore, doc, setDoc, onSnapshot } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-firestore.js";
 
+        // 老師您的專屬金鑰
         const firebaseConfig = {
             apiKey: "AIzaSyBduUmDpYh6lv8v-86Tmiay_8xe2dPmehI",
             authDomain: "physics-sync-2026.firebaseapp.com",
@@ -51,7 +52,7 @@
 
     <script type="text/babel">
         const { useState, useEffect, useMemo, Fragment } = React;
-        const APP_VERSION = "v8.6.1 (停課事件相容校準版)";
+        const APP_VERSION = "v8.8.0 (自訂停課日修復版)";
 
         const THEME_COLORS = [
             { id: 'sky', name: '晴空水藍', h: 199, s: 89, base: 'bg-sky-400', light: 'bg-sky-50', text: 'text-sky-800' },
@@ -128,7 +129,7 @@
             const currentCourse = currentCourses.find(c => c.id === selectedCourseId) || currentCourses[0];
             const currentTheme = THEME_COLORS.find(t => t.id === (currentCourse?.themeId || 'sky')) || THEME_COLORS[0];
             
-            // 🌟 核心修復：資料結構向下相容引擎 (Schema Evolution)
+            // 🌟 齒輪 4 尋回：向下相容的翻譯引擎
             const normalizedHolidays = useMemo(() => {
                 const h = currentSemesterData.settings.holidays || [];
                 return h.map(item => typeof item === 'string' ? { date: item, desc: '國定假日' } : item);
@@ -149,7 +150,7 @@
             };
 
             const getGlobalExams = (dateKey, settings) => {
-                const tracks = [ { id: 'common', label: '高一二', color: 'bg-amber-100 text-amber-800' }, { id: 'v3', label: '技三', color: 'bg-orange-100 text-orange-800' }, { id: 's3', label: '綜三', color: 'bg-fuchsia-100 text-fuchsia-800' } ];
+                const tracks = [ { id: 'common', label: '高一二', color: 'bg-amber-100 text-amber-800 border-amber-300' }, { id: 'v3', label: '技三', color: 'bg-orange-100 text-orange-800 border-orange-300' }, { id: 's3', label: '綜三', color: 'bg-fuchsia-100 text-fuchsia-800 border-fuchsia-300' } ];
                 const results = [];
                 tracks.forEach(t => {
                     const trackData = settings[t.id]; if (!trackData) return;
@@ -292,7 +293,10 @@
                     const lastLog = extra.cls.logs[extra.cls.logs.length - 1] || { chapter: firstChapter, page: '1' }; 
                     setFormData({ ...formData, logChapter: existingLog ? existingLog.chapter : lastLog.chapter, logPage: existingLog ? existingLog.page : lastLog.page, logFinishedChapters: extra.cls.finishedChapters || [], logEvent: existingLog?.event || null, logEventText: existingLog?.eventText || '' }); 
                 }
-                else if (type === 'editHoliday') { const existing = getHoliday(extra); setFormData({ ...formData, holidayDate: extra, holidayDesc: existing ? existing.desc : '' }); }
+                else if (type === 'editHoliday') { 
+                    const existing = getHoliday(extra); 
+                    setFormData({ ...formData, holidayDate: extra, holidayDesc: existing ? existing.desc : '' }); 
+                }
                 else if (type === 'switchSemester') { setFormData({ ...formData, year: selectedYear, semester: selectedSemester, importSource: 'none' }); }
                 else if (type === 'addCourse') { setFormData({ ...formData, name: '', color: 'sky', system: '技高一' }); }
                 else if (type === 'addClass') { setFormData({ ...formData, className: '' }); }
@@ -335,7 +339,13 @@
                 }
                 else if (modalType === 'addCourse') { if (!formData.name) return; const newId = `c-${Date.now()}`; semester.courses.push({ id: newId, system: formData.system, name: formData.name, themeId: formData.color, syllabus: JSON.parse(JSON.stringify(DEFAULT_SYLLABUS)), classes: [] }); setSelectedCourseId(newId); }
                 else if (modalType === 'addClass') { if (!formData.className) return; semester.courses.find(c => c.id === selectedCourseId).classes.push({ id: `cl-${Date.now()}`, name: formData.className, schedule: [], logs: [], finishedChapters: [] }); }
-                else if (modalType === 'editHoliday') { const f = (semester.settings.holidays || []).filter(h => (typeof h === 'string' ? h : h.date) !== formData.holidayDate); if (formData.holidayDesc.trim()) f.push({ date: formData.holidayDate, desc: formData.holidayDesc }); semester.settings.holidays = f; }
+                else if (modalType === 'editHoliday') { 
+                    // 🌟 齒輪 3 尋回：將自訂文字存入資料結構
+                    const f = (semester.settings.holidays || []).filter(h => (typeof h === 'string' ? h : h.date) !== formData.holidayDate); 
+                    if (formData.holidayDesc.trim()) f.push({ date: formData.holidayDate, desc: formData.holidayDesc }); 
+                    else f.push({ date: formData.holidayDate, desc: '國定假日' });
+                    semester.settings.holidays = f; 
+                }
                 else if (modalType === 'semesterSettings') { semester.settings = { ...semester.settings, ...formData.examData }; }
                 else if (modalType === 'editSyllabus') { semester.courses.find(c => c.id === selectedCourseId).syllabus = JSON.parse(JSON.stringify(formData.syllabusData)); }
                 setData(newData); setIsModalOpen(false);
@@ -479,18 +489,7 @@
                                                             : <span className="text-xs text-slate-300 italic">尚未設定課表</span>
                                                         }
                                                     </div>
-                                                    <div className="pt-4 border-t border-slate-50 flex justify-between items-end">
-                                                        <div className="flex-1">
-                                                            <div className="flex justify-between items-center mb-2">
-                                                                <div className="flex items-center gap-2">
-                                                                    <span className="text-slate-400 font-black text-[14px] uppercase tracking-widest">剩餘可用</span>
-                                                                    <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full ${health.barBgClass}`}>{health.msg}</span>
-                                                                </div>
-                                                                <span className={`text-xl font-black ${health.textClass}`}>{health.periods} <span className="text-sm">節</span></span>
-                                                            </div>
-                                                            <div className="h-2 w-full bg-slate-100 rounded-full overflow-hidden"><div className={`h-full transition-all duration-1000 ${health.colorClass}`} style={{ width: `${health.percentage}%` }}></div></div>
-                                                        </div>
-                                                    </div>
+                                                    <div className="pt-4 border-t border-slate-50 flex justify-between items-end"><div className="flex-1"><div className="flex justify-between items-center mb-2"><div className="flex items-center gap-2"><span className="text-slate-400 font-black text-[14px] uppercase tracking-widest">剩餘可用</span><span className={`text-[10px] font-bold px-2 py-0.5 rounded-full ${health.barBgClass}`}>{health.msg}</span></div><span className={`text-xl font-black ${health.textClass}`}>{health.periods} <span className="text-sm">節</span></span></div><div className="h-2 w-full bg-slate-100 rounded-full overflow-hidden"><div className={`h-full transition-all duration-1000 ${health.colorClass}`} style={{ width: `${health.percentage}%` }}></div></div></div></div>
                                                 </div>
                                             )})}
                                             <button onClick={() => openModal('addClass')} className="bg-slate-50 rounded-[32px] border-2 border-dashed border-slate-200 p-6 flex flex-col items-center justify-center gap-2 text-slate-400 font-black hover:bg-white hover:border-indigo-300 hover:text-indigo-500 transition-all min-h-[140px]"><i className="ph-bold ph-plus text-2xl"></i> 建立新班級</button>
@@ -550,10 +549,10 @@
                                                             const dateObj=new Date(y,m,d); const dk=formatDateKey(dateObj); const ho=getHoliday(dk); const isH=!!ho; const classes=getDayClasses(dateObj); const exams=getGlobalExams(dk, currentSemesterData.settings);
                                                             grid.push(
                                                                 <div key={d} onClick={()=>{if(isH) openModal('editHoliday',dk); else {setCurrentDate(dateObj);setCalendarViewMode('week');}}} className={`aspect-square rounded-[24px] border p-2 flex flex-col items-center cursor-pointer group ${isToday(dateObj)?'ring-2 ring-indigo-500':''} ${isH?'bg-rose-50 border-rose-100':'bg-white hover:bg-slate-50'}`}>
-                                                                    {/* 🌟 尋回: stopPropagation 確保不會誤跳轉 */}
-                                                                    {!isH && <button onClick={(e)=>{e.stopPropagation();openModal('editHoliday',dk);}} className="absolute top-2 right-2 p-1 opacity-0 group-hover:opacity-100 hover:text-rose-500"><i className="ph-bold ph-flag text-xs"></i></button>}
+                                                                    {/* 🌟 齒輪 1 尋回：停課日小旗幟與事件攔截 */}
+                                                                    {!isH && <button onClick={(e)=>{e.stopPropagation();openModal('editHoliday',dk);}} className="absolute top-2 right-2 p-1.5 opacity-0 group-hover:opacity-100 hover:bg-rose-100 text-rose-300 hover:text-rose-500 rounded-xl transition-all" title="設為停課日"><i className="ph-bold ph-flag text-sm"></i></button>}
                                                                     <span className={`text-xs font-black mb-1 ${isH?'text-rose-500':'text-slate-600'}`}>{d}</span>
-                                                                    {isH ? (<div className="text-center"><i className="ph-fill ph-tree-palm text-rose-400"></i><div className="text-[9px] font-bold text-rose-600 leading-tight">{ho.desc}</div></div>) : (
+                                                                    {isH ? (<div className="text-center mt-1"><i className="ph-fill ph-tree-palm text-rose-400 text-lg"></i><div className="text-[10px] font-bold text-rose-600 leading-tight mt-1">{ho.desc}</div></div>) : (
                                                                         <div className="flex flex-col items-center gap-1 w-full">
                                                                             {exams.map((ex,i)=><div key={i} className={`text-[9px] font-black border rounded py-[1px] text-center w-full ${ex.color}`}>{ex.label}{ex.exam}</div>)}
                                                                             <div className="flex flex-wrap justify-center gap-1">
@@ -668,7 +667,7 @@
                                                 {['一','二','三','四','五'].map(d=><div key={d} className="text-center text-[10px] font-black text-slate-400">週{d}</div>)}
                                                 {PERIODS.map(p=>(
                                                     <Fragment key={p}>
-                                                        <div className="flex items-center justify-center text-[10px] font-bold text-slate-400">第{p}</div>
+                                                        <div className="flex items-center justify-center text-[10px] font-bold text-slate-400">第{p}節</div>
                                                         {[1,2,3,4,5].map(dIdx=>{ 
                                                             const isSel = currentCourse?.classes.find(c=>c.id===editingClassId)?.schedule.some(s=>s.day===dIdx&&s.period===p); 
                                                             const conflictName = getConflictingClassName(dIdx, p); 
@@ -755,11 +754,12 @@
 
                                     {modalType === 'backupRestore' && (<div className="space-y-6"><div className="bg-sky-50 p-6 rounded-[32px] text-center"><i className="ph-bold ph-download-simple text-4xl text-sky-500 mb-2"></i><h4 className="font-black">下載備份檔</h4><p className="text-xs text-slate-500 mb-4">將所有設定下載為 JSON</p><button onClick={handleExport} className="bg-sky-500 text-white px-6 py-3 rounded-xl font-bold">匯出</button></div><div className="bg-rose-50 p-6 rounded-[32px] text-center relative"><i className="ph-bold ph-upload-simple text-4xl text-rose-500 mb-2"></i><h4 className="font-black">還原備份檔</h4><p className="text-xs text-rose-400 mb-4">⚠️ 將覆蓋目前所有資料</p><label className="bg-rose-500 text-white px-6 py-3 rounded-xl font-bold cursor-pointer">匯入<input type="file" accept=".json" className="hidden" onChange={handleImport} /></label></div></div>)}
                                     
+                                    {/* 🌟 齒輪 2：輸入名稱的控制台視窗 */}
                                     {modalType === 'editHoliday' && (
                                         <div className="space-y-4 text-center">
                                             <i className="ph-fill ph-tree-palm text-4xl text-rose-400"></i>
                                             <h4 className="font-black text-lg">{formData.holidayDate} 停課設定</h4>
-                                            <input type="text" value={formData.holidayDesc} onChange={(e)=>setFormData({...formData, holidayDesc:e.target.value})} className="w-full p-4 border-2 border-rose-100 rounded-2xl outline-none text-center bg-rose-50 text-rose-700 font-bold" placeholder="例如: 校慶補假"/>
+                                            <input type="text" value={formData.holidayDesc} onChange={(e)=>setFormData({...formData, holidayDesc:e.target.value})} className="w-full p-4 border-2 border-rose-100 rounded-2xl outline-none text-center bg-rose-50 text-rose-700 font-bold" placeholder="例如: 校慶補假 (預設為國定假日)"/>
                                             <div className="flex gap-3">
                                                 <button onClick={()=>{const n={...data};n[selectedYear][selectedSemester].settings.holidays=(n[selectedYear][selectedSemester].settings.holidays||[]).filter(h=>(typeof h==='string'?h:h.date)!==formData.holidayDate);setData(n);setIsModalOpen(false);}} className="flex-1 py-4 bg-slate-100 text-rose-400 font-black rounded-2xl hover:bg-rose-50 flex justify-center items-center gap-2"><i className="ph-bold ph-trash"></i> 刪除此停課日</button>
                                                 <button onClick={handleSave} className="flex-1 py-4 bg-rose-500 text-white font-black rounded-2xl">儲存設定</button>
