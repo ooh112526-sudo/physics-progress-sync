@@ -53,7 +53,7 @@
 
     <script type="text/babel">
         const { useState, useEffect, useMemo, Fragment } = React;
-        const APP_VERSION = "v9.1.0 (智慧記憶快取版)";
+        const APP_VERSION = "v9.1.1 (時空解耦穩定版)";
 
         const THEME_COLORS = [
             { id: 'sky', name: '晴空水藍', h: 199, s: 89, base: 'bg-sky-400', light: 'bg-sky-50', text: 'text-sky-800' },
@@ -69,7 +69,6 @@
         const PERIODS = [1, 2, 3, 4, 5, 6, 7, 8];
         const DEFAULT_SYLLABUS = { exam1: [{ title: "1-1 物理學的發展", pages: 0 }, { title: "1-2 物理量單位", pages: 0 }], exam2: [{ title: "2-1 速度", pages: 0 }, { title: "2-2 加速度", pages: 0 }], exam3: [{ title: "3-1 牛頓定律", pages: 0 }] };
         
-        // 乾淨的初始狀態
         const initialData = {
             "114": {
                 "下學期": {
@@ -88,28 +87,23 @@
             const [data, setData] = useState(initialData);
             const [isCopied, setIsCopied] = useState(false);
 
-            // 🌟 核心升級一：本機記憶晶片 (讀取上次的學年、學期與選中課程)
             const [selectedYear, setSelectedYear] = useState(() => localStorage.getItem('physics_last_year') || "114");
             const [selectedSemester, setSelectedSemester] = useState(() => localStorage.getItem('physics_last_sem') || "下學期");
             const [selectedCourseId, setSelectedCourseId] = useState(() => localStorage.getItem('physics_last_course') || null);
             
-            // 🌟 核心升級二：狀態改變時，自動寫入記憶晶片
             useEffect(() => {
                 localStorage.setItem('physics_last_year', selectedYear);
                 localStorage.setItem('physics_last_sem', selectedSemester);
                 if (selectedCourseId) localStorage.setItem('physics_last_course', selectedCourseId);
             }, [selectedYear, selectedSemester, selectedCourseId]);
 
-            // 🌟 核心升級三：雲端載入後的自動尋標器 (Auto-Select Engine)
             useEffect(() => {
                 const currentSemesterCourses = data[selectedYear]?.[selectedSemester]?.courses || [];
                 if (currentSemesterCourses.length > 0) {
-                    // 如果目前指標是 null，或者指標指著的課已經被刪除了，就自動將指標對準第一門課
                     if (!selectedCourseId || !currentSemesterCourses.find(c => c.id === selectedCourseId)) {
                         setSelectedCourseId(currentSemesterCourses[0].id);
                     }
                 } else {
-                    // 如果這個學期真的連一門課都沒有，才允許顯示空白狀態
                     setSelectedCourseId(null);
                 }
             }, [data, selectedYear, selectedSemester, selectedCourseId]);
@@ -200,13 +194,27 @@
                 return `${selectedYear}/${parts[1]}/${dateArr.map(d => d.split('-')[2]).join('、')}`;
             };
 
+            // 🌟 核心修復：時空解耦 (State Decoupling)
+            // 將 healthData 依賴的時鐘，從 currentDate 拔除，改為真正的 new Date()
             const healthData = useMemo(() => {
                 if (!currentCourse || !currentSemesterData.settings.startDate) return {};
-                const testToday = new Date(currentDate); 
+                
+                // ⚠️ 關鍵修正：永遠抓取真實世界的當下，不受行事曆按鈕影響
+                const realToday = new Date(); 
+                realToday.setHours(0,0,0,0);
+                
                 const startDate = new Date(currentSemesterData.settings.startDate);
-                let snapshotDate = new Date(testToday);
-                const diffTime = testToday - startDate;
-                if (diffTime > 0) { const diffDays = Math.floor(diffTime / (1000 * 60 * 60 * 24)); const remainder = diffDays % 7; snapshotDate.setDate(snapshotDate.getDate() - remainder); } else { snapshotDate = new Date(startDate); }
+                let snapshotDate = new Date(realToday);
+                
+                const diffTime = realToday - startDate;
+                if (diffTime > 0) { 
+                    const diffDays = Math.floor(diffTime / (1000 * 60 * 60 * 24)); 
+                    const remainder = diffDays % 7; 
+                    snapshotDate.setDate(snapshotDate.getDate() - remainder); 
+                } else { 
+                    snapshotDate = new Date(startDate); 
+                }
+                
                 snapshotDate.setHours(0,0,0,0);
                 const snapshotStr = formatDateKey(snapshotDate);
 
@@ -223,7 +231,7 @@
 
                     if (nextExamDateStr) {
                         const endDate = new Date(nextExamDateStr); endDate.setHours(0,0,0,0);
-                        globalDaysToExam = Math.ceil((endDate - testToday) / (1000 * 60 * 60 * 24));
+                        globalDaysToExam = Math.ceil((endDate - realToday) / (1000 * 60 * 60 * 24));
                         for (let d = new Date(snapshotDate); d < endDate; d.setDate(d.getDate() + 1)) {
                             const dStr = formatDateKey(d); const dayOfWeek = d.getDay();
                             if (dayOfWeek === 0 || dayOfWeek === 6 || getHoliday(dStr) || getExamName(dStr, currentCourse.system, currentSemesterData.settings)) continue;
@@ -247,7 +255,8 @@
                     result[cls.id] = { periods, delta, status, colorClass, textClass, barBgClass, msg, percentage, daysToExam: globalDaysToExam };
                 });
                 return result;
-            }, [currentCourse, currentSemesterData.settings, currentDate]);
+            // ⚠️ 已經從監聽陣列中移除 currentDate，防止行事曆連動干擾
+            }, [currentCourse, currentSemesterData.settings]); 
 
             const getDayClasses = (date) => {
                 const dayIdx = date.getDay(); const dateKey = formatDateKey(date); const holidayObj = getHoliday(dateKey); const result = [];
@@ -589,7 +598,6 @@
                                                                     
                                                                     {!isH && <button onClick={(e)=>{e.stopPropagation();openModal('editHoliday',dk);}} className="absolute top-2 right-2 w-7 h-7 hidden md:flex items-center justify-center opacity-0 group-hover:opacity-100 text-slate-400 hover:text-rose-500 hover:bg-rose-50 rounded-xl transition-all z-10" title="點擊或長按日期以設為停課日"><i className="ph-bold ph-flag text-sm"></i></button>}
                                                                     <span className={`text-xs font-black mb-1 mt-1 md:mt-0 ${isH?'text-rose-500':'text-slate-600'}`}>{d}</span>
-                                                                    
                                                                     {isH ? (<div className="text-center mt-1"><i className="ph-fill ph-tree-palm text-rose-400 text-lg md:text-xl"></i><div className="text-[10px] font-bold text-rose-600 leading-tight mt-1">{ho.desc}</div></div>) : (
                                                                         <div className="flex flex-col items-center gap-1 w-full mt-1">
                                                                             {exams.map((ex,i)=><div key={i} className={`text-[9px] font-black border rounded py-[1px] text-center w-full ${ex.color}`}>{ex.label}{ex.exam}</div>)}
