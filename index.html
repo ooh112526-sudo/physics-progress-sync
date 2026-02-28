@@ -12,7 +12,7 @@
     
     <!-- 引入 Tailwind CSS -->
     <script src="https://cdn.tailwindcss.com"></script>
-    <!-- 引入 Phosphor Icons (防白屏字體圖示庫) -->
+    <!-- 引入 Phosphor Icons -->
     <script src="https://unpkg.com/@phosphor-icons/web"></script>
     
     <style>
@@ -52,7 +52,7 @@
 
     <script type="text/babel">
         const { useState, useEffect, useMemo, Fragment } = React;
-        const APP_VERSION = "v8.5.0 (最終無損還原版)";
+        const APP_VERSION = "v8.6.0 (最終邊界邏輯補齊版)";
 
         const THEME_COLORS = [
             { id: 'sky', name: '晴空水藍', h: 199, s: 89, base: 'bg-sky-400', light: 'bg-sky-50', text: 'text-sky-800' },
@@ -128,7 +128,7 @@
             
             const [formData, setFormData] = useState({ system: '技高一', name: '', color: 'sky', className: '', year: '114', semester: '下學期', importSource: 'none', logPage: '', logChapter: '', logFinishedChapters: [], logEvent: null, logEventText: '', holidayDate: '', holidayDesc: '', examData: { startDate: '', common: {}, v3: {}, s3: {} }, syllabusData: { exam1: [], exam2: [], exam3: [] } });
 
-            // --- 核心資料運算 ---
+            // --- 核心資料與輔助函數 ---
             const currentSemesterData = data[selectedYear]?.[selectedSemester] || { settings: { startDate: '', common: {}, v3: {}, s3: {}, holidays: [] }, courses: [] };
             const currentCourses = currentSemesterData.courses || [];
             const currentCourse = currentCourses.find(c => c.id === selectedCourseId) || currentCourses[0];
@@ -148,7 +148,7 @@
             };
 
             const getGlobalExams = (dateKey, settings) => {
-                const tracks = [ { id: 'common', label: '高一二', color: 'bg-amber-100 text-amber-800' }, { id: 'v3', label: '技三', color: 'bg-orange-100 text-orange-800' }, { id: 's3', label: '綜三', color: 'bg-fuchsia-100 text-fuchsia-800' } ];
+                const tracks = [ { id: 'common', label: '高一二', color: 'bg-amber-100 text-amber-800 border-amber-300' }, { id: 'v3', label: '技三', color: 'bg-orange-100 text-orange-800 border-orange-300' }, { id: 's3', label: '綜三', color: 'bg-fuchsia-100 text-fuchsia-800 border-fuchsia-300' } ];
                 const results = [];
                 tracks.forEach(t => {
                     const trackData = settings[t.id]; if (!trackData) return;
@@ -161,9 +161,7 @@
 
             const allAvailableSemesters = useMemo(() => {
                 const list = [];
-                Object.keys(data).forEach(y => {
-                    Object.keys(data[y]).forEach(s => { list.push({ year: y, semester: s, label: `${y}學年度 ${s}` }); });
-                });
+                Object.keys(data).forEach(y => { Object.keys(data[y]).forEach(s => { list.push({ year: y, semester: s, label: `${y}學年度 ${s}` }); }); });
                 return list.sort((a, b) => (a.year !== b.year ? parseInt(b.year) - parseInt(a.year) : b.semester.localeCompare(a.semester)));
             }, [data]);
 
@@ -224,7 +222,105 @@
                 return result;
             }, [currentCourse, currentSemesterData.settings, currentDate]);
 
-            // --- 功能操作邏輯 ---
+            // 🌟 尋回功能: 精密的「時間邊界過濾」與「連堂歷史追溯」演算法
+            const getDayClasses = (date) => {
+                const dayIdx = date.getDay();
+                const dateKey = formatDateKey(date);
+                const holidayObj = getHoliday(dateKey);
+                const result = [];
+                const startDate = currentSemesterData.settings.startDate;
+
+                currentCourses.forEach(course => {
+                    // 🛑 時間結界 1：開學日之前，不顯示排課
+                    if (startDate && dateKey < startDate) return;
+
+                    let track = (course.system === '技高三' ? 'v3' : (course.system === '綜高三' ? 's3' : 'common'));
+                    const trackData = currentSemesterData.settings[track] || {};
+                    const allExamDates = [ ...(trackData.exam1 || []), ...(trackData.exam2 || []), ...(trackData.exam3 || []) ];
+                    
+                    // 🛑 時間結界 2：第三次段考之後，不顯示排課
+                    if (allExamDates.length > 0) {
+                        const lastExamDate = [...allExamDates].sort().pop();
+                        if (dateKey > lastExamDate) return;
+                    }
+
+                    const examName = getExamName(dateKey, course.system, currentSemesterData.settings);
+
+                    course.classes.forEach(cls => {
+                        const scheds = cls.schedule?.filter(s => s.day === dayIdx).map(s => s.period).sort((a,b)=>a-b) || [];
+                        
+                        // 🔗 連堂群組判定演算法
+                        const getBlock = (period, sortedScheds) => {
+                            let block = [period]; let curr = period;
+                            while (sortedScheds.includes(curr - 1)) { block.push(curr - 1); curr--; }
+                            curr = period;
+                            while (sortedScheds.includes(curr + 1)) { block.push(curr + 1); curr++; }
+                            return block.sort((a,b)=>a-b);
+                        };
+
+                        scheds.forEach(p => {
+                            const currentBlock = getBlock(p, scheds);
+                            const minPeriodInBlock = Math.min(...currentBlock);
+                            const maxPeriodInBlock = Math.max(...currentBlock);
+
+                            const blockLogs = cls.logs?.filter(l => l.date === dateKey && currentBlock.includes(l.period)) || [];
+                            const hasBlockLog = blockLogs.length > 0;
+                            const latestBlockLog = hasBlockLog ? blockLogs[blockLogs.length - 1] : null;
+
+                            const futureLogsToday = cls.logs?.filter(l => l.date === dateKey && l.period > maxPeriodInBlock).sort((a,b)=>a.period - b.period) || [];
+                            const hasFutureLogToday = futureLogsToday.length > 0;
+                            const firstFutureLogToday = hasFutureLogToday ? futureLogsToday[0] : null;
+
+                            const pastLogs = cls.logs?.filter(l => {
+                                if (l.date < dateKey) return true;
+                                if (l.date === dateKey && l.period < minPeriodInBlock) return true;
+                                return false;
+                            }).sort((a, b) => {
+                                if (a.date !== b.date) return a.date.localeCompare(b.date);
+                                return a.period - b.period;
+                            }) || [];
+                            const lastPastLog = pastLogs.length > 0 ? pastLogs[pastLogs.length - 1] : null;
+
+                            let logPrefix = '上次: ';
+                            let logText = '無紀錄';
+                            let isSpecialEvent = false;
+                            let isEffectivelyLogged = hasBlockLog || hasFutureLogToday;
+
+                            if (hasBlockLog) {
+                                logPrefix = '今日: ';
+                                if (latestBlockLog.event) {
+                                    isSpecialEvent = true;
+                                    const evtMap = { quiz: '小考', lab: '實驗', study: '自修', other: '活動' };
+                                    logText = `${evtMap[latestBlockLog.event]}${latestBlockLog.eventText ? `:${latestBlockLog.eventText}` : ''}`;
+                                } else {
+                                    logText = `${latestBlockLog.chapter.split(' ')[0]}(P${latestBlockLog.page})`;
+                                }
+                            } else if (hasFutureLogToday) {
+                                logPrefix = '今日: ';
+                                if (firstFutureLogToday.event) {
+                                    isSpecialEvent = true;
+                                    const evtMap = { quiz: '小考', lab: '實驗', study: '自修', other: '活動' };
+                                    logText = `${evtMap[firstFutureLogToday.event]}${firstFutureLogToday.eventText ? `:${firstFutureLogToday.eventText}` : ''}`;
+                                } else {
+                                    logText = `${firstFutureLogToday.chapter.split(' ')[0]}(P${firstFutureLogToday.page})`;
+                                }
+                            } else if (lastPastLog) {
+                                logText = `${lastPastLog.chapter.split(' ')[0]}(P${lastPastLog.page})`;
+                            }
+
+                            result.push({
+                                ...cls, period: p, courseTheme: THEME_COLORS.find(t => t.id === course.themeId),
+                                hasLog: isEffectivelyLogged, isSpecialEvent, logPrefix, logText,
+                                isHoliday: !!holidayObj, holidayDesc: holidayObj?.desc,
+                                isExam: !!examName, examName: examName
+                            });
+                        });
+                    });
+                });
+                return result.sort((a, b) => a.period - b.period);
+            };
+
+            // --- 視窗與操作函數 ---
             const openModal = (type, extra = null) => {
                 setModalType(type);
                 if (type === 'classJournal') { 
@@ -240,10 +336,7 @@
                 else if (type === 'addCourse') { setFormData({ ...formData, name: '', color: 'sky', system: '技高一' }); }
                 else if (type === 'addClass') { setFormData({ ...formData, className: '' }); }
                 else if (type === 'editSchedule') { setEditingClassId(extra); }
-                else if (type === 'semesterSettings') { 
-                    setFormData({ ...formData, examData: JSON.parse(JSON.stringify(currentSemesterData.settings)) }); 
-                    setActiveSettingTab('common'); setActiveExamKey(null); setViewDate(new Date(currentDate));
-                }
+                else if (type === 'semesterSettings') { setFormData({ ...formData, examData: JSON.parse(JSON.stringify(currentSemesterData.settings)) }); setActiveSettingTab('common'); setActiveExamKey(null); setViewDate(new Date(currentDate)); }
                 else if (type === 'editSyllabus') { setFormData({ ...formData, syllabusData: JSON.parse(JSON.stringify(currentCourses.find(c => c.id === extra).syllabus || DEFAULT_SYLLABUS)) }); setSelectedCourseId(extra); setExpandedSyllabusTab('exam1'); }
                 else if (type === 'devicePairing') { setInputSyncKey(''); }
                 else if (type === 'confirmDelete') { setDeleteTarget(extra); }
@@ -265,8 +358,7 @@
                         let inheritedCourses = [];
                         if (formData.importSource !== 'none') {
                             const [sYear, sSem] = formData.importSource.split('-');
-                            const sourceData = data[sYear][sSem];
-                            inheritedCourses = sourceData.courses.map(course => ({ ...course, classes: course.classes.map(cls => ({ id: cls.id, name: cls.name, schedule: [], logs: [], finishedChapters: [] })) }));
+                            inheritedCourses = data[sYear][sSem].courses.map(course => ({ ...course, classes: course.classes.map(cls => ({ id: cls.id, name: cls.name, schedule: [], logs: [], finishedChapters: [] })) }));
                         }
                         newData[formData.year][formData.semester] = { settings: { startDate: '', common: {exam1:[], exam2:[], exam3:[]}, v3: {exam1:[], exam2:[], exam3:[]}, s3: {exam1:[], exam2:[], exam3:[]}, holidays: [] }, courses: inheritedCourses }; 
                     }
@@ -311,27 +403,21 @@
                 setFormData({ ...formData, logFinishedChapters: newFinished, logPage: targetPage });
             };
 
-            // 💡 尋回功能 1-B: 日曆輔助演算法 (為了段考日期點選)
             const getDaysInMonth = (date) => {
                 const d = new Date(date.getFullYear(), date.getMonth() + 1, 0);
                 const firstDay = new Date(date.getFullYear(), date.getMonth(), 1).getDay();
                 return { firstDay: firstDay === 0 ? 6 : firstDay - 1, days: d.getDate() };
             };
 
-            // 💡 尋回功能 1-C: 段考日期點選切換邏輯
             const toggleDateInExam = (dateStr) => {
                 const newExamData = { ...formData.examData };
                 if (!newExamData[activeSettingTab]) newExamData[activeSettingTab] = {};
                 const dates = newExamData[activeSettingTab][activeExamKey] || [];
-                if (dates.includes(dateStr)) {
-                    newExamData[activeSettingTab][activeExamKey] = dates.filter(d => d !== dateStr);
-                } else {
-                    newExamData[activeSettingTab][activeExamKey] = [...dates, dateStr].sort();
-                }
+                if (dates.includes(dateStr)) newExamData[activeSettingTab][activeExamKey] = dates.filter(d => d !== dateStr);
+                else newExamData[activeSettingTab][activeExamKey] = [...dates, dateStr].sort();
                 setFormData({ ...formData, examData: newExamData });
             };
 
-            // 💡 尋回功能 2-B: 課綱上下移動排序邏輯
             const moveSyllabus = (exam, index, direction) => {
                 const newSyllabus = { ...formData.syllabusData };
                 const arr = newSyllabus[exam];
@@ -364,29 +450,13 @@
                 if (currentChData?.pages > 0) currentChapterMaxPages = currentChData.pages;
             }
 
-            const getDayClasses = (date) => {
-                const dayIdx = date.getDay(); const dateKey = formatDateKey(date); const holidayObj = getHoliday(dateKey); const result = [];
-                currentCourses.forEach(course => {
-                    const examName = getExamName(dateKey, course.system, currentSemesterData.settings);
-                    course.classes.forEach(cls => {
-                        (cls.schedule?.filter(s => s.day === dayIdx).map(s => s.period) || []).forEach(p => {
-                            const hasLog = cls.logs?.some(l => l.date === dateKey && l.period === p);
-                            const latestLog = cls.logs?.find(l => l.date === dateKey && l.period === p);
-                            result.push({ ...cls, period: p, courseTheme: THEME_COLORS.find(t => t.id === course.themeId), hasLog, isHoliday: !!holidayObj, holidayDesc: holidayObj?.desc, isExam: !!examName, examName, logText: latestLog ? (latestLog.event ? latestLog.eventText || '活動' : `${latestLog.chapter.split(' ')[0]}(P${latestLog.page})`) : '無紀錄' });
-                        });
-                    });
-                });
-                return result.sort((a, b) => a.period - b.period);
-            };
-
             const moveDate = (amount, unit) => { const d = new Date(currentDate); if (unit === 'week') d.setDate(d.getDate() + amount * 7); else d.setMonth(d.getMonth() + amount); setCurrentDate(d); };
             const weekDays = useMemo(() => { const d = new Date(currentDate); const day = d.getDay(); d.setDate(d.getDate() - day + (day === 0 ? -6 : 1)); return Array.from({ length: 7 }, (_, i) => { const n = new Date(d); n.setDate(n.getDate() + i); return n; }); }, [currentDate]);
 
-            // --- 匯出匯入備份 ---
             const handleExport = () => { try { const blob = new Blob([JSON.stringify(data, null, 2)], { type: "application/json" }); const url = URL.createObjectURL(blob); const link = document.createElement('a'); link.href = url; link.download = `physics_backup_${new Date().toISOString().slice(0, 10)}.json`; link.click(); } catch (e) { console.error(e); } };
             const handleImport = (e) => { const file = e.target.files[0]; if (!file) return; const reader = new FileReader(); reader.onload = (event) => { try { const importedData = JSON.parse(event.target.result); if (importedData) { setData(importedData); setIsModalOpen(false); } } catch (err) { alert("檔案解析失敗"); } }; reader.readAsText(file); e.target.value = ''; };
 
-            if (!isFirebaseReady) return <div className="h-screen flex flex-col items-center justify-center bg-slate-50 text-slate-400"><i className="ph-bold ph-cloud-arrow-up text-5xl mb-4 animate-pulse text-indigo-300"></i><p className="font-bold">連線雲端金庫中...</p></div>;
+            if (!isFirebaseReady) return <div className="h-screen flex flex-col items-center justify-center bg-slate-50 text-slate-400"><i className="ph-bold ph-cloud-arrow-up text-5xl mb-4 animate-pulse text-indigo-300"></i><p className="font-bold tracking-widest text-sm">正在連線至雲端金庫...</p></div>;
 
             return (
                 <div className="flex h-screen bg-slate-50 font-sans text-slate-900 overflow-hidden">
@@ -430,9 +500,7 @@
                         <div className="w-full bg-white border-b px-4 lg:px-8 z-20 h-20 flex items-center justify-between shrink-0">
                             <div className="flex items-center gap-2 lg:gap-4">
                                 <button onClick={() => setIsSidebarOpen(true)} className="lg:hidden p-2 -ml-2 text-slate-600"><i className="ph-bold ph-list text-2xl"></i></button>
-                                
                                 <button onClick={() => setCurrentDate(new Date())} className="px-4 py-2 bg-slate-900 text-white rounded-full text-[11px] font-black shadow-lg shadow-slate-200 active:scale-95 tracking-widest hover:bg-slate-800 transition-colors whitespace-nowrap hidden md:block">今天</button>
-
                                 <div className="flex bg-slate-100 p-1 rounded-xl">
                                     <button onClick={() => setActiveMainView('dashboard')} className={`flex items-center gap-1.5 px-3 py-2 rounded-lg text-xs font-black transition-all ${activeMainView === 'dashboard' ? 'bg-white text-slate-800 shadow-sm' : 'text-slate-500 hover:text-slate-700'}`}><i className="ph-bold ph-squares-four text-base"></i> 儀表板</button>
                                     <button onClick={() => setActiveMainView('calendar')} className={`flex items-center gap-1.5 px-3 py-2 rounded-lg text-xs font-black transition-all ${activeMainView === 'calendar' ? 'bg-white text-slate-800 shadow-sm' : 'text-slate-500 hover:text-slate-700'}`}><i className="ph-bold ph-calendar-blank text-base"></i> 行事曆</button>
@@ -476,14 +544,12 @@
                                                 return (
                                                 <div key={cls.id} className="bg-white p-6 rounded-[32px] border border-slate-100 shadow-sm hover:shadow-md transition-all group">
                                                     <div className="flex justify-between items-center mb-4"><span className="text-lg font-black text-slate-700">{cls.name}</span><button onClick={() => openModal('editSchedule', cls.id)} className="p-2 bg-slate-50 hover:text-indigo-600 rounded-xl"><i className="ph-bold ph-clock text-sm"></i></button></div>
-                                                    
                                                     <div className="flex flex-wrap gap-2 mb-4">
                                                         {cls.schedule.length > 0 
                                                             ? [...cls.schedule].sort((a,b)=>a.day!==b.day ? a.day-b.day : a.period-b.period).map((s, i) => <span key={i} className={`text-[11px] font-black px-2 py-1 rounded-lg ${currentTheme.light} ${currentTheme.text}`}>週{['日','一','二','三','四','五','六'][s.day]}第{s.period}節</span>) 
                                                             : <span className="text-xs text-slate-300 italic">尚未設定課表</span>
                                                         }
                                                     </div>
-
                                                     <div className="pt-4 border-t border-slate-50 flex justify-between items-end"><div className="flex-1"><div className="flex justify-between items-center mb-2"><span className={`text-[10px] font-bold px-2 py-0.5 rounded-full ${health.barBgClass}`}>{health.msg}</span><span className={`text-base font-black ${health.textClass}`}>{health.periods} <span className="text-xs">節</span></span></div><div className="h-1.5 w-full bg-slate-100 rounded-full overflow-hidden"><div className={`h-full transition-all duration-1000 ${health.colorClass}`} style={{ width: `${health.percentage}%` }}></div></div></div></div>
                                                 </div>
                                             )})}
@@ -506,12 +572,26 @@
                                                             const classes = getDayClasses(d).filter(c => c.period === p);
                                                             return (
                                                                 <div key={i} className="p-2 border-r min-h-[90px] relative hover:bg-slate-50/50 transition-colors">
-                                                                    {classes.map(cls => (
-                                                                        <button key={cls.id} onClick={() => openModal('classJournal', {cls, date: d, period: p})} className={`w-full p-3 rounded-[16px] text-left border mb-1 last:mb-0 ${cls.hasLog?'bg-sky-50 border-sky-100':'bg-white border-slate-100 hover:shadow-md'}`}>
-                                                                            <div className={`font-black text-sm ${cls.courseTheme.text}`}>{cls.name}</div>
-                                                                            <div className="text-[11px] font-bold text-slate-500 truncate mt-1">{cls.hasLog ? '今日: ' : '上次: '}{cls.logText}</div>
-                                                                        </button>
-                                                                    ))}
+                                                                    {classes.map(cls => {
+                                                                        const isBlocked = cls.isHoliday || cls.isExam;
+                                                                        let bgClass = 'bg-sky-50/40 border-slate-100/50 hover:shadow-md active:scale-95';
+                                                                        let titleColor = cls.courseTheme.text;
+                                                                        let descColor = 'text-slate-500';
+                                                                        let descText = `${cls.logPrefix}${cls.logText}`;
+                                                                        
+                                                                        if (cls.isHoliday) { bgClass = 'bg-slate-50 border-dashed border-slate-200 cursor-not-allowed opacity-80'; titleColor = 'text-slate-400'; descColor = 'text-rose-400'; descText = `🌴 停課: ${cls.holidayDesc}`; }
+                                                                        else if (cls.isExam) { bgClass = 'bg-amber-50 border-amber-200 cursor-not-allowed shadow-sm opacity-90'; titleColor = 'text-amber-700'; descColor = 'text-amber-600'; descText = `📝 測驗: ${cls.examName}`; }
+                                                                        else if (!cls.hasLog) { bgClass = 'bg-white border-slate-100 hover:shadow-md'; }
+
+                                                                        return (
+                                                                            <button key={cls.id} onClick={() => !isBlocked && openModal('classJournal', {cls, date: d, period: p})} className={`w-full p-3 rounded-[16px] text-left transition-all border relative overflow-hidden flex flex-col justify-center mb-1 last:mb-0 ${bgClass}`}>
+                                                                                <div className={`font-black text-[15px] leading-tight mb-1 ${titleColor}`}>{cls.name}</div>
+                                                                                <div className={`text-[11px] font-bold truncate ${descColor}`}>{descText}</div>
+                                                                                {!isBlocked && cls.hasLog && <i className={`ph-bold ph-check-circle absolute top-3 right-3 text-lg ${cls.isSpecialEvent ? 'text-blue-500' : 'text-emerald-500'}`} />}
+                                                                                {!isBlocked && <div className={`absolute bottom-0 left-0 h-[5px] transition-all duration-500 ${cls.hasLog ? 'w-full' : 'w-0'} ${cls.isSpecialEvent ? 'bg-blue-500' : 'bg-emerald-400'}`}></div>}
+                                                                            </button>
+                                                                        );
+                                                                    })}
                                                                 </div>
                                                             );
                                                         })}
@@ -534,7 +614,12 @@
                                                                     {isH ? (<div className="text-center"><i className="ph-fill ph-tree-palm text-rose-400"></i><div className="text-[9px] font-bold text-rose-600 leading-tight">{ho.desc}</div></div>) : (
                                                                         <div className="flex flex-col items-center gap-1 w-full">
                                                                             {exams.map((ex,i)=><div key={i} className={`text-[9px] font-black border rounded py-[1px] text-center w-full ${ex.color}`}>{ex.label}{ex.exam}</div>)}
-                                                                            <div className="flex flex-wrap justify-center gap-1">{classes.map((c,i)=>(<div key={i} className={`w-2 h-2 rounded-full ${c.courseTheme.base} ${c.hasLog?'ring-1 ring-slate-400':'opacity-60'}`}/>))}</div>
+                                                                            <div className="flex flex-wrap justify-center gap-1">
+                                                                                {classes.map((c,idx)=>(
+                                                                                    c.isExam ? <div key={idx} className="w-2 h-2 rounded-sm bg-amber-400 ring-1 ring-amber-500" title={`${c.name} (${c.examName})`} /> :
+                                                                                    (!c.isHoliday && <div key={idx} className={`w-2 h-2 rounded-full ${c.courseTheme.base} ${c.hasLog?'ring-1 ring-slate-400':'opacity-60'}`} title={`${c.name} (第${c.period}節)`}/>)
+                                                                                ))}
+                                                                            </div>
                                                                         </div>
                                                                     )}
                                                                 </div>
@@ -621,7 +706,6 @@
                                     
                                     {modalType === 'editSchedule' && (<div className="space-y-4 overflow-x-auto"><div className="grid grid-cols-6 gap-1 min-w-[300px]"><div/>{['一','二','三','四','五'].map(d=><div key={d} className="text-center text-[10px] font-black text-slate-400">週{d}</div>)}{PERIODS.map(p=>(<Fragment key={p}><div className="flex items-center justify-center text-[10px] font-bold text-slate-400">第{p}節</div>{[1,2,3,4,5].map(dIdx=>{ const isSel = currentCourse?.classes.find(c=>c.id===editingClassId)?.schedule.some(s=>s.day===dIdx&&s.period===p); const conflictName = getConflictingClassName(dIdx, p); const hasConflict = isSel && conflictName; return <button key={`${dIdx}-${p}`} onClick={()=>toggleSchedule(dIdx, p)} className={`h-10 rounded-lg border-2 transition-all relative flex flex-col items-center justify-center ${isSel?'bg-indigo-600 border-indigo-600 text-white':hasConflict?'border-rose-400 ring-2 ring-rose-200 bg-rose-50':'bg-slate-50 border-slate-100 hover:bg-slate-100'}`}>{isSel?<i className="ph-bold ph-plus"></i>:conflictName?<span className="text-[8px] font-black opacity-60 text-rose-500 scale-90">{conflictName}</span>:null}</button> })}</Fragment>))}</div></div>)}
                                     
-                                    {/* 💡 尋回功能 1: 視覺化月曆選取器 */}
                                     {modalType === 'semesterSettings' && (
                                         <div className="space-y-6">
                                             <div className="bg-slate-50 p-4 rounded-2xl flex justify-between items-center"><span className="text-sm font-black text-slate-700">學期開學日</span><input type="date" value={formData.examData.startDate||''} onChange={(e)=>setFormData({...formData, examData:{...formData.examData, startDate:e.target.value}})} className="p-2 rounded-xl outline-none" /></div>
@@ -667,7 +751,6 @@
                                         </div>
                                     )}
 
-                                    {/* 💡 尋回功能 2: 課綱上下左右排序鍵 */}
                                     {modalType === 'editSyllabus' && (
                                         <div className="space-y-4">
                                             {['exam1','exam2','exam3'].map(k=>(
@@ -697,7 +780,6 @@
 
                                     {modalType === 'backupRestore' && (<div className="space-y-6"><div className="bg-sky-50 p-6 rounded-[32px] text-center"><i className="ph-bold ph-download-simple text-4xl text-sky-500 mb-2"></i><h4 className="font-black">下載備份檔</h4><p className="text-xs text-slate-500 mb-4">將所有設定下載為 JSON</p><button onClick={handleExport} className="bg-sky-500 text-white px-6 py-3 rounded-xl font-bold">匯出</button></div><div className="bg-rose-50 p-6 rounded-[32px] text-center relative"><i className="ph-bold ph-upload-simple text-4xl text-rose-500 mb-2"></i><h4 className="font-black">還原備份檔</h4><p className="text-xs text-rose-400 mb-4">⚠️ 將覆蓋目前所有資料</p><label className="bg-rose-500 text-white px-6 py-3 rounded-xl font-bold cursor-pointer">匯入<input type="file" accept=".json" className="hidden" onChange={handleImport} /></label></div></div>)}
                                     
-                                    {/* 💡 尋回功能 3: 停課日刪除按鈕 */}
                                     {modalType === 'editHoliday' && (
                                         <div className="space-y-4 text-center">
                                             <i className="ph-fill ph-tree-palm text-4xl text-rose-400"></i>
@@ -722,5 +804,3 @@
     </script>
 </body>
 </html>
-
-
