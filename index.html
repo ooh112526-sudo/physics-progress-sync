@@ -53,7 +53,7 @@
 
     <script type="text/babel">
         const { useState, useEffect, useMemo, Fragment } = React;
-        const APP_VERSION = "v9.0.0 (正式出廠版)";
+        const APP_VERSION = "v9.1.0 (智慧記憶快取版)";
 
         const THEME_COLORS = [
             { id: 'sky', name: '晴空水藍', h: 199, s: 89, base: 'bg-sky-400', light: 'bg-sky-50', text: 'text-sky-800' },
@@ -69,7 +69,7 @@
         const PERIODS = [1, 2, 3, 4, 5, 6, 7, 8];
         const DEFAULT_SYLLABUS = { exam1: [{ title: "1-1 物理學的發展", pages: 0 }, { title: "1-2 物理量單位", pages: 0 }], exam2: [{ title: "2-1 速度", pages: 0 }, { title: "2-2 加速度", pages: 0 }], exam3: [{ title: "3-1 牛頓定律", pages: 0 }] };
         
-        // 🌟 清空重置：拔除所有測試資料與假課表，恢復為原廠白紙狀態
+        // 乾淨的初始狀態
         const initialData = {
             "114": {
                 "下學期": {
@@ -87,6 +87,32 @@
             useEffect(() => localStorage.setItem('physics_sync_key', syncKey), [syncKey]);
             const [data, setData] = useState(initialData);
             const [isCopied, setIsCopied] = useState(false);
+
+            // 🌟 核心升級一：本機記憶晶片 (讀取上次的學年、學期與選中課程)
+            const [selectedYear, setSelectedYear] = useState(() => localStorage.getItem('physics_last_year') || "114");
+            const [selectedSemester, setSelectedSemester] = useState(() => localStorage.getItem('physics_last_sem') || "下學期");
+            const [selectedCourseId, setSelectedCourseId] = useState(() => localStorage.getItem('physics_last_course') || null);
+            
+            // 🌟 核心升級二：狀態改變時，自動寫入記憶晶片
+            useEffect(() => {
+                localStorage.setItem('physics_last_year', selectedYear);
+                localStorage.setItem('physics_last_sem', selectedSemester);
+                if (selectedCourseId) localStorage.setItem('physics_last_course', selectedCourseId);
+            }, [selectedYear, selectedSemester, selectedCourseId]);
+
+            // 🌟 核心升級三：雲端載入後的自動尋標器 (Auto-Select Engine)
+            useEffect(() => {
+                const currentSemesterCourses = data[selectedYear]?.[selectedSemester]?.courses || [];
+                if (currentSemesterCourses.length > 0) {
+                    // 如果目前指標是 null，或者指標指著的課已經被刪除了，就自動將指標對準第一門課
+                    if (!selectedCourseId || !currentSemesterCourses.find(c => c.id === selectedCourseId)) {
+                        setSelectedCourseId(currentSemesterCourses[0].id);
+                    }
+                } else {
+                    // 如果這個學期真的連一門課都沒有，才允許顯示空白狀態
+                    setSelectedCourseId(null);
+                }
+            }, [data, selectedYear, selectedSemester, selectedCourseId]);
 
             useEffect(() => { const h = () => setIsFirebaseReady(true); window.addEventListener('firebaseReady', h); return () => window.removeEventListener('firebaseReady', h); }, []);
             useEffect(() => { if (!isFirebaseReady || !window.firebase) return; window.firebase.signInAnonymously(window.firebase.auth).catch(e=>console.error(e)); const unsub = window.firebase.onAuthStateChanged(window.firebase.auth, setUser); return () => unsub(); }, [isFirebaseReady]);
@@ -108,19 +134,13 @@
                 window.firebase.setDoc(window.firebase.doc(window.firebase.db, 'artifacts', window.firebase.currentAppId, 'public', 'data', 'shared_progress', syncKey), { appData: data }, { merge: true }).catch(e=>console.error(e));
             }, [data, user, isCloudLoaded, syncKey]);
 
-            const [selectedYear, setSelectedYear] = useState("114");
-            const [selectedSemester, setSelectedSemester] = useState("下學期");
-            const [selectedCourseId, setSelectedCourseId] = useState(null);
             const [isSidebarOpen, setIsSidebarOpen] = useState(false);
             const [isModalOpen, setIsModalOpen] = useState(false);
             const [modalType, setModalType] = useState(''); 
             const [activeMainView, setActiveMainView] = useState('dashboard');
             const [calendarViewMode, setCalendarViewMode] = useState('week'); 
-            
-            // 🌟 關閉時光機：全面切換回當下的系統真實時間
             const [currentDate, setCurrentDate] = useState(new Date()); 
             const [viewDate, setViewDate] = useState(new Date());
-            
             const [editingClassId, setEditingClassId] = useState(null);
             const [editingCell, setEditingCell] = useState(null);
             const [expandedSyllabusTab, setExpandedSyllabusTab] = useState('exam1');
@@ -166,13 +186,10 @@
                 return results;
             };
 
-            // 🌟 三年滾動遷移演算法：精準切割最新的 6 個學期 (3年)
             const allAvailableSemesters = useMemo(() => {
                 const list = [];
                 Object.keys(data).forEach(y => { Object.keys(data[y]).forEach(s => { list.push({ year: y, semester: s, label: `${y}學年度 ${s}` }); }); });
-                // 先依年份排序 (大到小)，再依學期排序
                 list.sort((a, b) => (a.year !== b.year ? parseInt(b.year) - parseInt(a.year) : b.semester.localeCompare(a.semester)));
-                // 只保留前 6 個 (三年)
                 return list.slice(0, 6);
             }, [data]);
 
@@ -329,7 +346,6 @@
                         let inheritedCourses = [];
                         if (formData.importSource !== 'none') {
                             const [sYear, sSem] = formData.importSource.split('-');
-                            // 🌟 繼承邏輯驗證：只複製骨架，清空課表與日誌
                             inheritedCourses = data[sYear][sSem].courses.map(course => ({ ...course, classes: course.classes.map(cls => ({ id: cls.id, name: cls.name, schedule: [], logs: [], finishedChapters: [] })) }));
                         }
                         newData[formData.year][formData.semester] = { settings: { startDate: '', common: {exam1:[], exam2:[], exam3:[]}, v3: {exam1:[], exam2:[], exam3:[]}, s3: {exam1:[], exam2:[], exam3:[]}, holidays: [] }, courses: inheritedCourses }; 
@@ -408,7 +424,7 @@
                                 {currentCourses.length === 0 && (
                                     <div className="text-center py-8 text-slate-300">
                                         <i className="ph-fill ph-book-open text-3xl mb-2 opacity-50"></i>
-                                        <p className="text-xs font-bold">目前尚無課程<br/>點擊上方 + 號建立</p>
+                                        <p className="text-xs font-bold mt-2">目前沒有任何課程<br/>請點擊上方 + 號建立</p>
                                     </div>
                                 )}
                                 {currentCourses.map(c => (
@@ -573,6 +589,7 @@
                                                                     
                                                                     {!isH && <button onClick={(e)=>{e.stopPropagation();openModal('editHoliday',dk);}} className="absolute top-2 right-2 w-7 h-7 hidden md:flex items-center justify-center opacity-0 group-hover:opacity-100 text-slate-400 hover:text-rose-500 hover:bg-rose-50 rounded-xl transition-all z-10" title="點擊或長按日期以設為停課日"><i className="ph-bold ph-flag text-sm"></i></button>}
                                                                     <span className={`text-xs font-black mb-1 mt-1 md:mt-0 ${isH?'text-rose-500':'text-slate-600'}`}>{d}</span>
+                                                                    
                                                                     {isH ? (<div className="text-center mt-1"><i className="ph-fill ph-tree-palm text-rose-400 text-lg md:text-xl"></i><div className="text-[10px] font-bold text-rose-600 leading-tight mt-1">{ho.desc}</div></div>) : (
                                                                         <div className="flex flex-col items-center gap-1 w-full mt-1">
                                                                             {exams.map((ex,i)=><div key={i} className={`text-[9px] font-black border rounded py-[1px] text-center w-full ${ex.color}`}>{ex.label}{ex.exam}</div>)}
@@ -649,11 +666,9 @@
                                                     {!isCopied && (
                                                         <button onClick={() => { 
                                                             navigator.clipboard.writeText(syncKey).then(()=> {
-                                                                setIsCopied(true);
-                                                                setTimeout(()=> setIsCopied(false), 2000);
+                                                                setIsCopied(true); setTimeout(()=> setIsCopied(false), 2000);
                                                             }).catch(err => {
-                                                                const el = document.createElement('textarea');
-                                                                el.value = syncKey; document.body.appendChild(el); el.select(); document.execCommand('copy'); document.body.removeChild(el);
+                                                                const el = document.createElement('textarea'); el.value = syncKey; document.body.appendChild(el); el.select(); document.execCommand('copy'); document.body.removeChild(el);
                                                                 setIsCopied(true); setTimeout(()=> setIsCopied(false), 2000);
                                                             });
                                                         }} className="p-2 hover:bg-white rounded-xl text-indigo-400 shadow-sm transition-all active:scale-90">
