@@ -145,7 +145,8 @@
             const [activeExamKey, setActiveExamKey] = useState(null);
             const [activeSettingTab, setActiveSettingTab] = useState('common');
             
-            const [formData, setFormData] = useState({ system: '技高一', name: '', color: 'sky', className: '', year: '114', semester: '下學期', importSource: 'none', logPage: '', logChapter: '', logFinishedChapters: [], logEvent: null, logEventText: '', holidayDate: '', holidayDesc: '', examData: { startDate: '', common: {}, v3: {}, s3: {} }, syllabusData: { exam1: [], exam2: [], exam3: [] } });
+            // 🌟 擴充 formData 狀態：新增 courseId 與 classId 來記憶「目前正在編輯誰」
+            const [formData, setFormData] = useState({ system: '技高一', name: '', color: 'sky', className: '', year: '114', semester: '下學期', importSource: 'none', logPage: '', logChapter: '', logFinishedChapters: [], logEvent: null, logEventText: '', holidayDate: '', holidayDesc: '', examData: { startDate: '', common: {}, v3: {}, s3: {} }, syllabusData: { exam1: [], exam2: [], exam3: [] }, courseId: null, classId: null });
 
             const currentSemesterData = data[selectedYear]?.[selectedSemester] || { settings: { startDate: '', common: {}, v3: {}, s3: {}, holidays: [] }, courses: [] };
             const currentCourses = currentSemesterData.courses || [];
@@ -328,8 +329,12 @@
                 }
                 else if (type === 'editHoliday') { const existing = getHoliday(extra); setFormData({ ...formData, holidayDate: extra, holidayDesc: existing ? existing.desc : '' }); }
                 else if (type === 'switchSemester') { setFormData({ ...formData, year: selectedYear, semester: selectedSemester, importSource: 'none' }); }
-                else if (type === 'addCourse') { setFormData({ ...formData, name: '', color: 'sky', system: '技高一' }); }
-                else if (type === 'addClass') { setFormData({ ...formData, className: '' }); }
+                else if (type === 'addCourse') { setFormData({ ...formData, name: '', color: 'sky', system: '技高一', courseId: null }); }
+                else if (type === 'addClass') { setFormData({ ...formData, className: '', classId: null }); }
+                // 🌟 新增：編輯課程的資料反向綁定
+                else if (type === 'editCourse') { setFormData({ ...formData, name: extra.name, color: extra.themeId, system: extra.system, courseId: extra.id }); }
+                // 🌟 新增：編輯班級的資料反向綁定
+                else if (type === 'editClass') { setFormData({ ...formData, className: extra.cls.name, classId: extra.cls.id, courseId: extra.courseId }); }
                 else if (type === 'editSchedule') { setEditingClassId(extra); }
                 else if (type === 'semesterSettings') { setFormData({ ...formData, examData: JSON.parse(JSON.stringify(currentSemesterData.settings)) }); setActiveSettingTab('common'); setActiveExamKey(null); setViewDate(new Date(currentDate)); }
                 else if (type === 'editSyllabus') { setFormData({ ...formData, syllabusData: JSON.parse(JSON.stringify(currentCourses.find(c => c.id === extra).syllabus || DEFAULT_SYLLABUS)) }); setSelectedCourseId(extra); setExpandedSyllabusTab('exam1'); }
@@ -368,7 +373,22 @@
                     if (existingIdx >= 0) cls.logs[existingIdx] = logEntry; else cls.logs.push(logEntry); 
                 }
                 else if (modalType === 'addCourse') { if (!formData.name) return; const newId = `c-${Date.now()}`; semester.courses.push({ id: newId, system: formData.system, name: formData.name, themeId: formData.color, syllabus: JSON.parse(JSON.stringify(DEFAULT_SYLLABUS)), classes: [] }); setSelectedCourseId(newId); }
+                // 🌟 新增：儲存編輯後的課程資訊
+                else if (modalType === 'editCourse') { 
+                    if (!formData.name) return; 
+                    const targetCourse = semester.courses.find(c => c.id === formData.courseId);
+                    if (targetCourse) { targetCourse.name = formData.name; targetCourse.system = formData.system; targetCourse.themeId = formData.color; }
+                }
                 else if (modalType === 'addClass') { if (!formData.className) return; semester.courses.find(c => c.id === selectedCourseId).classes.push({ id: `cl-${Date.now()}`, name: formData.className, schedule: [], logs: [], finishedChapters: [] }); }
+                // 🌟 新增：儲存編輯後的班級資訊
+                else if (modalType === 'editClass') {
+                    if (!formData.className) return;
+                    const targetCourse = semester.courses.find(c => c.id === formData.courseId);
+                    if (targetCourse) {
+                        const targetClass = targetCourse.classes.find(cl => cl.id === formData.classId);
+                        if (targetClass) targetClass.name = formData.className;
+                    }
+                }
                 else if (modalType === 'editHoliday') { 
                     const f = (semester.settings.holidays || []).filter(h => (typeof h === 'string' ? h : h.date) !== formData.holidayDate); 
                     if (formData.holidayDesc.trim()) f.push({ date: formData.holidayDate, desc: formData.holidayDesc }); 
@@ -450,13 +470,18 @@
                                             <button onClick={() => setSelectedCourseId(c.id)} className="flex-1 flex items-center gap-3 text-left overflow-hidden"><div className={`w-2 h-2 rounded-full shrink-0 ${THEME_COLORS.find(t=>t.id===c.themeId).base}`}></div><span className={`font-bold text-sm truncate ${selectedCourseId===c.id?'text-indigo-700':'text-slate-600'}`}>{c.name}</span></button>
                                             <div className="flex">
                                                 <button onClick={(e) => { e.stopPropagation(); openModal('editSyllabus', c.id); }} className="p-1.5 text-slate-300 hover:text-indigo-600"><i className="ph-bold ph-list-checks text-base"></i></button>
+                                                {/* 🌟 新增：編輯課程按鈕 */}
+                                                <button onClick={(e) => { e.stopPropagation(); openModal('editCourse', c); }} className="p-1.5 text-slate-300 hover:text-indigo-600"><i className="ph-bold ph-pencil-simple text-base"></i></button>
                                                 <button onClick={(e) => { e.stopPropagation(); openModal('confirmDelete', { type: 'course', id: c.id, name: c.name }); }} className="p-1.5 text-slate-300 hover:text-rose-500"><i className="ph-bold ph-trash text-base"></i></button>
                                             </div>
                                         </div>
                                         {selectedCourseId === c.id && activeMainView === 'dashboard' && (
                                             <div className="pl-8 space-y-1 pb-2 mt-1">
                                                 {c.classes.map(cls => (
-                                                    <div key={cls.id} className="flex justify-between items-center group"><span className="text-xs font-medium text-slate-400">{cls.name}</span><div className="opacity-0 group-hover:opacity-100 flex"><button onClick={() => openModal('editSchedule', cls.id)} className="p-1 text-slate-300 hover:text-indigo-600"><i className="ph-bold ph-clock text-xs"></i></button><button onClick={() => openModal('confirmDelete', { type: 'class', id: cls.id, courseId: c.id, name: cls.name })} className="p-1 text-slate-300 hover:text-rose-500"><i className="ph-bold ph-trash text-xs"></i></button></div></div>
+                                                    <div key={cls.id} className="flex justify-between items-center group"><span className="text-xs font-medium text-slate-400">{cls.name}</span><div className="opacity-0 group-hover:opacity-100 flex"><button onClick={() => openModal('editSchedule', cls.id)} className="p-1 text-slate-300 hover:text-indigo-600"><i className="ph-bold ph-clock text-xs"></i></button>
+                                                    {/* 🌟 新增：編輯班級按鈕 */}
+                                                    <button onClick={() => openModal('editClass', { courseId: c.id, cls: cls })} className="p-1 text-slate-300 hover:text-indigo-600"><i className="ph-bold ph-pencil-simple text-xs"></i></button>
+                                                    <button onClick={() => openModal('confirmDelete', { type: 'class', id: cls.id, courseId: c.id, name: cls.name })} className="p-1 text-slate-300 hover:text-rose-500"><i className="ph-bold ph-trash text-xs"></i></button></div></div>
                                                 ))}
                                                 <button onClick={() => openModal('addClass')} className="text-[10px] font-black text-indigo-400 hover:text-indigo-600 flex items-center gap-1 mt-1"><i className="ph-bold ph-plus"></i> 新增班級</button>
                                             </div>
@@ -771,7 +796,8 @@
                     {isModalOpen && (
                         <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-md z-50 flex items-center justify-center p-4">
                             <div className={`bg-white rounded-[48px] shadow-2xl w-full ${modalType==='semesterSettings'||modalType==='editSyllabus'?'max-w-4xl':'max-w-md'} overflow-hidden animate-in flex flex-col max-h-[90vh]`}>
-                                <div className="px-8 py-6 bg-slate-50 border-b flex items-center justify-between shrink-0"><h3 className="font-black text-slate-800 uppercase">{modalType==='addCourse'?'新增課程':modalType==='addClass'?'新增班級':modalType==='editSchedule'?'設定課表':modalType==='classJournal'?'教學日誌':modalType==='devicePairing'?'跨裝置同步':modalType==='semesterSettings'?'行事曆分流設定':modalType==='editSyllabus'?'編輯課綱':modalType==='switchSemester'?'切換學期':modalType==='backupRestore'?'資料備份與還原':'系統訊息'}</h3><button onClick={()=>setIsModalOpen(false)}><i className="ph-bold ph-x text-xl text-slate-400"></i></button></div>
+                                {/* 🌟 根據是 add 還是 edit 動態更換標題 */}
+                                <div className="px-8 py-6 bg-slate-50 border-b flex items-center justify-between shrink-0"><h3 className="font-black text-slate-800 uppercase">{modalType==='addCourse'?'新增課程':modalType==='editCourse'?'編輯課程':modalType==='addClass'?'新增班級':modalType==='editClass'?'編輯班級名稱':modalType==='editSchedule'?'設定課表':modalType==='classJournal'?'教學日誌':modalType==='devicePairing'?'跨裝置同步':modalType==='semesterSettings'?'行事曆分流設定':modalType==='editSyllabus'?'編輯課綱':modalType==='switchSemester'?'切換學期':modalType==='backupRestore'?'資料備份與還原':'系統訊息'}</h3><button onClick={()=>setIsModalOpen(false)}><i className="ph-bold ph-x text-xl text-slate-400"></i></button></div>
                                 <div className="p-8 overflow-y-auto">
                                     
                                     {modalType === 'switchSemester' && (
@@ -791,8 +817,11 @@
                                         </div>
                                     )}
 
-                                    {modalType === 'addCourse' && (<div className="space-y-4"><select value={formData.system} onChange={(e)=>setFormData({...formData, system:e.target.value})} className="w-full p-4 bg-slate-50 rounded-2xl border-2 font-bold outline-none">{['技高一','技高二','技高三','綜高一','綜高二','綜高三'].map(s=><option key={s} value={s}>{s}</option>)}</select><input type="text" value={formData.name} onChange={(e)=>setFormData({...formData, name:e.target.value})} className="w-full p-4 bg-slate-50 rounded-2xl border-2 font-bold outline-none" placeholder="科目名稱，如: 物理B" /><div className="flex justify-center gap-2">{THEME_COLORS.map(c=><button key={c.id} onClick={()=>setFormData({...formData, color:c.id})} className={`w-8 h-8 rounded-full ${c.base} ${formData.color===c.id?'ring-4 ring-slate-200':''}`}/>)}</div><button onClick={handleSave} className="w-full py-4 bg-indigo-600 text-white font-black rounded-2xl">確認新增</button></div>)}
-                                    {modalType === 'addClass' && (<div className="space-y-4"><input type="text" value={formData.className} onChange={(e)=>setFormData({...formData, className:e.target.value})} className="w-full p-4 bg-slate-50 rounded-2xl border-2 font-bold text-center outline-none" placeholder="班級名稱，如: 電一智" /><button onClick={handleSave} className="w-full py-4 bg-indigo-600 text-white font-black rounded-2xl">確認新增</button></div>)}
+                                    {/* 🌟 讓 addCourse 與 editCourse 共用同一個表單 UI，並動態改變按鈕文字 */}
+                                    {(modalType === 'addCourse' || modalType === 'editCourse') && (<div className="space-y-4"><select value={formData.system} onChange={(e)=>setFormData({...formData, system:e.target.value})} className="w-full p-4 bg-slate-50 rounded-2xl border-2 font-bold outline-none">{['技高一','技高二','技高三','綜高一','綜高二','綜高三'].map(s=><option key={s} value={s}>{s}</option>)}</select><input type="text" value={formData.name} onChange={(e)=>setFormData({...formData, name:e.target.value})} className="w-full p-4 bg-slate-50 rounded-2xl border-2 font-bold outline-none" placeholder="科目名稱，如: 物理B" /><div className="flex justify-center gap-2">{THEME_COLORS.map(c=><button key={c.id} onClick={()=>setFormData({...formData, color:c.id})} className={`w-8 h-8 rounded-full ${c.base} ${formData.color===c.id?'ring-4 ring-slate-200':''}`}/>)}</div><button onClick={handleSave} className="w-full py-4 bg-indigo-600 text-white font-black rounded-2xl">{modalType === 'editCourse' ? '儲存修改' : '確認新增'}</button></div>)}
+                                    
+                                    {/* 🌟 讓 addClass 與 editClass 共用同一個表單 UI，並動態改變按鈕文字 */}
+                                    {(modalType === 'addClass' || modalType === 'editClass') && (<div className="space-y-4"><input type="text" value={formData.className} onChange={(e)=>setFormData({...formData, className:e.target.value})} className="w-full p-4 bg-slate-50 rounded-2xl border-2 font-bold text-center outline-none" placeholder="班級名稱，如: 電一智" /><button onClick={handleSave} className="w-full py-4 bg-indigo-600 text-white font-black rounded-2xl">{modalType === 'editClass' ? '儲存修改' : '確認新增'}</button></div>)}
                                     
                                     {modalType === 'confirmDelete' && (
                                         <div className="text-center space-y-6">
