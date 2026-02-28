@@ -53,7 +53,7 @@
 
     <script type="text/babel">
         const { useState, useEffect, useMemo, Fragment } = React;
-        const APP_VERSION = "v9.4.0 (週末色彩辨識版)";
+        const APP_VERSION = "v9.4.1 (週末背景濾鏡版)";
 
         const THEME_COLORS = [
             { id: 'sky', name: '晴空水藍', h: 199, s: 89, base: 'bg-sky-400', light: 'bg-sky-50', text: 'text-sky-800' },
@@ -643,13 +643,14 @@
                                             <div className="min-w-[900px] overflow-auto flex-1">
                                                 <div className="grid border-b border-slate-100 bg-slate-50/50" style={{ gridTemplateColumns: '60px 2fr 2fr 2fr 2fr 2fr 1fr 1fr' }}>
                                                     <div className="p-4 flex items-center justify-center border-r"><i className="ph-bold ph-clock text-slate-400"></i></div>
-                                                    {/* 🌟 濾鏡：週視圖的標題列 (紅藍雙色) */}
+                                                    {/* 🌟 濾鏡：週視圖的標題列 (紅藍雙色與背景) */}
                                                     {weekDays.map((d, i) => {
                                                         const dayIdx = d.getDay();
                                                         const dayColor = dayIdx === 0 ? 'text-red-500' : dayIdx === 6 ? 'text-blue-500' : 'text-slate-400';
                                                         const numColor = isToday(d) ? 'text-indigo-600' : dayIdx === 0 ? 'text-red-500' : dayIdx === 6 ? 'text-blue-500' : '';
+                                                        const bgClass = isToday(d) ? 'bg-indigo-50/80' : dayIdx === 0 ? 'bg-red-50/60' : dayIdx === 6 ? 'bg-blue-50/60' : '';
                                                         return (
-                                                            <div key={i} className={`p-4 text-center border-r ${isToday(d)?'bg-indigo-50/50':''}`}>
+                                                            <div key={i} className={`p-4 text-center border-r transition-colors ${bgClass}`}>
                                                                 <div className={`text-[10px] font-black ${dayColor}`}>週{WEEK_DAYS_DISPLAY[dayIdx]}</div>
                                                                 <div className={`text-lg font-black ${numColor}`}>{d.getDate()}</div>
                                                             </div>
@@ -661,8 +662,11 @@
                                                         <div className="border-r flex items-center justify-center text-[11px] font-black text-slate-400 bg-slate-50/30">第{p}節</div>
                                                         {weekDays.map((d, i) => {
                                                             const classes = getDayClasses(d).filter(c => c.period === p);
+                                                            // 🌟 濾鏡：週視圖的內容欄位背景
+                                                            const dayIdx = d.getDay();
+                                                            const colBg = dayIdx === 0 ? 'bg-red-50/30' : dayIdx === 6 ? 'bg-blue-50/30' : 'hover:bg-slate-50/50';
                                                             return (
-                                                                <div key={i} className="p-2 border-r min-h-[90px] relative hover:bg-slate-50/50 transition-colors">
+                                                                <div key={i} className={`p-2 border-r min-h-[90px] relative transition-colors ${colBg}`}>
                                                                     {classes.map(cls => {
                                                                         const isBlocked = cls.isHoliday || cls.isExam;
                                                                         let bgClass = 'bg-sky-50 border-sky-100 hover:shadow-md active:scale-95';
@@ -703,15 +707,16 @@
                                                         for(let d=1;d<=dim;d++) {
                                                             const dateObj=new Date(y,m,d); const dk=formatDateKey(dateObj); const ho=getHoliday(dk); const isH=!!ho; const classes=getDayClasses(dateObj); const exams=getGlobalExams(dk, currentSemesterData.settings);
                                                             
-                                                            // 🌟 濾鏡：月曆格子的數字顏色
+                                                            // 🌟 濾鏡：月曆格子的數字顏色與背景底色
                                                             const dayIdx = dateObj.getDay();
                                                             const numColor = isH ? 'text-rose-500' : dayIdx === 0 ? 'text-red-500' : dayIdx === 6 ? 'text-blue-500' : 'text-slate-600';
+                                                            const cellBgClass = isH ? 'bg-rose-50 border-rose-200' : dayIdx === 0 ? 'bg-red-50/50 border-red-100 hover:bg-red-50' : dayIdx === 6 ? 'bg-blue-50/50 border-blue-100 hover:bg-blue-50' : 'bg-white hover:bg-slate-50 border-slate-100';
 
                                                             grid.push(
                                                                 <div key={d} 
                                                                     onClick={()=>{if(isH) openModal('editHoliday',dk); else {setCurrentDate(dateObj);setCalendarViewMode('day');}}} 
                                                                     onContextMenu={(e) => { e.preventDefault(); if(!isH) openModal('editHoliday', dk); }}
-                                                                    className={`aspect-square rounded-[24px] border p-1 md:p-2 flex flex-col items-center cursor-pointer group relative native-touch ${isToday(dateObj)?'ring-2 ring-indigo-500':''} ${isH?'bg-rose-50 border-rose-100':'bg-white hover:bg-slate-50'}`}>
+                                                                    className={`aspect-square rounded-[24px] border p-1 md:p-2 flex flex-col items-center cursor-pointer group relative native-touch ${isToday(dateObj)?'ring-2 ring-indigo-500 shadow-sm':''} ${cellBgClass}`}>
                                                                     
                                                                     {!isH && <button onClick={(e)=>{e.stopPropagation();openModal('editHoliday',dk);}} className="absolute top-2 right-2 w-7 h-7 hidden md:flex items-center justify-center opacity-0 group-hover:opacity-100 text-slate-400 hover:text-rose-500 hover:bg-rose-50 rounded-xl transition-all z-10" title="點擊或長按日期以設為停課日"><i className="ph-bold ph-flag text-sm"></i></button>}
                                                                     
