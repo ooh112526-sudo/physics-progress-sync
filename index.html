@@ -23,7 +23,7 @@
         ::-webkit-scrollbar-track { background: transparent; }
         ::-webkit-scrollbar-thumb { background: #cbd5e1; border-radius: 10px; }
         .ph-bold, .ph-fill { display: inline-block; vertical-align: middle; }
-        /* 🌟 核心優化：阻斷手機長按時出現的系統選單與文字反白，打造 App 原生手感 */
+        /* 阻斷手機長按時出現的系統選單與文字反白 */
         .native-touch {
             -webkit-touch-callout: none;
             user-select: none;
@@ -57,7 +57,7 @@
 
     <script type="text/babel">
         const { useState, useEffect, useMemo, Fragment } = React;
-        const APP_VERSION = "v8.8.2 (極簡長按觸控版)";
+        const APP_VERSION = "v8.9.0 (安規認證版)";
 
         const THEME_COLORS = [
             { id: 'sky', name: '晴空水藍', h: 199, s: 89, base: 'bg-sky-400', light: 'bg-sky-50', text: 'text-sky-800' },
@@ -91,19 +91,31 @@
             const [syncKey, setSyncKey] = useState(() => localStorage.getItem('physics_sync_key') || ('PHY-' + Math.random().toString(36).substring(2, 7).toUpperCase()));
             useEffect(() => localStorage.setItem('physics_sync_key', syncKey), [syncKey]);
             const [data, setData] = useState(initialData);
+            // 🌟 解決 alert 違規：新增複製成功狀態
+            const [isCopied, setIsCopied] = useState(false);
 
             useEffect(() => { const h = () => setIsFirebaseReady(true); window.addEventListener('firebaseReady', h); return () => window.removeEventListener('firebaseReady', h); }, []);
             useEffect(() => { if (!isFirebaseReady || !window.firebase) return; window.firebase.signInAnonymously(window.firebase.auth).catch(e=>console.error(e)); const unsub = window.firebase.onAuthStateChanged(window.firebase.auth, setUser); return () => unsub(); }, [isFirebaseReady]);
+            
             useEffect(() => {
                 if (!user || !syncKey || !isFirebaseReady || !window.firebase) return; 
                 const docRef = window.firebase.doc(window.firebase.db, 'artifacts', window.firebase.currentAppId, 'public', 'data', 'shared_progress', syncKey);
-                const unsub = window.firebase.onSnapshot(docRef, (docSnap) => {
-                    if (docSnap.exists() && docSnap.data().appData) setData(prev => JSON.stringify(prev) === JSON.stringify(docSnap.data().appData) ? prev : docSnap.data().appData);
-                    else window.firebase.setDoc(docRef, { appData: data }, { merge: true }).catch(()=>{});
-                    setIsCloudLoaded(true);
-                });
+                
+                // 🌟 修復雷達防護網：加入 error callback 避免無聲崩潰
+                const unsub = window.firebase.onSnapshot(docRef, 
+                    (docSnap) => {
+                        if (docSnap.exists() && docSnap.data().appData) setData(prev => JSON.stringify(prev) === JSON.stringify(docSnap.data().appData) ? prev : docSnap.data().appData);
+                        else window.firebase.setDoc(docRef, { appData: data }, { merge: true }).catch(()=>{});
+                        setIsCloudLoaded(true);
+                    },
+                    (error) => {
+                        console.error("雲端雷達斷線:", error);
+                        setIsCloudLoaded(false); // 標示離線
+                    }
+                );
                 return () => unsub();
             }, [user, syncKey, isFirebaseReady]); 
+
             useEffect(() => {
                 if (!user || !isCloudLoaded || !syncKey || !window.firebase) return;
                 window.firebase.setDoc(window.firebase.doc(window.firebase.db, 'artifacts', window.firebase.currentAppId, 'public', 'data', 'shared_progress', syncKey), { appData: data }, { merge: true }).catch(e=>console.error(e));
@@ -140,6 +152,7 @@
             }, [currentSemesterData.settings.holidays]);
             
             const getHoliday = (dateKey) => normalizedHolidays.find(h => h.date === dateKey);
+
             const formatDateKey = (d) => `${d.getFullYear()}-${(d.getMonth() + 1).toString().padStart(2, '0')}-${d.getDate().toString().padStart(2, '0')}`;
             const isToday = (date) => formatDateKey(date) === formatDateKey(new Date());
 
@@ -153,7 +166,7 @@
             };
 
             const getGlobalExams = (dateKey, settings) => {
-                const tracks = [ { id: 'common', label: '高一二', color: 'bg-amber-100 text-amber-800' }, { id: 'v3', label: '技三', color: 'bg-orange-100 text-orange-800' }, { id: 's3', label: '綜三', color: 'bg-fuchsia-100 text-fuchsia-800' } ];
+                const tracks = [ { id: 'common', label: '高一二', color: 'bg-amber-100 text-amber-800 border-amber-300' }, { id: 'v3', label: '技三', color: 'bg-orange-100 text-orange-800 border-orange-300' }, { id: 's3', label: '綜三', color: 'bg-fuchsia-100 text-fuchsia-800 border-fuchsia-300' } ];
                 const results = [];
                 tracks.forEach(t => {
                     const trackData = settings[t.id]; if (!trackData) return;
@@ -303,7 +316,7 @@
                 else if (type === 'editSchedule') { setEditingClassId(extra); }
                 else if (type === 'semesterSettings') { setFormData({ ...formData, examData: JSON.parse(JSON.stringify(currentSemesterData.settings)) }); setActiveSettingTab('common'); setActiveExamKey(null); setViewDate(new Date(currentDate)); }
                 else if (type === 'editSyllabus') { setFormData({ ...formData, syllabusData: JSON.parse(JSON.stringify(currentCourses.find(c => c.id === extra).syllabus || DEFAULT_SYLLABUS)) }); setSelectedCourseId(extra); setExpandedSyllabusTab('exam1'); }
-                else if (type === 'devicePairing') { setInputSyncKey(''); }
+                else if (type === 'devicePairing') { setInputSyncKey(''); setIsCopied(false); }
                 else if (type === 'confirmDelete') { setDeleteTarget(extra); }
                 setIsModalOpen(true);
             };
@@ -525,7 +538,6 @@
                                                                             <button key={cls.id} onClick={() => !isBlocked && openModal('classJournal', {cls, date: d, period: p})} className={`w-full p-3 rounded-[16px] text-left transition-all border relative overflow-hidden flex flex-col justify-center mb-1 last:mb-0 ${bgClass}`}>
                                                                                 <div className={`font-black text-[15px] leading-tight mb-1 ${titleColor}`}>{cls.name}</div>
                                                                                 <div className={`text-[11px] font-bold truncate ${descColor}`}>{descText}</div>
-                                                                                
                                                                                 {!isBlocked && cls.hasLog && <i className={`ph-bold ph-check-circle absolute top-3 right-3 text-lg ${cls.isSpecialEvent ? 'text-blue-500' : 'text-emerald-500'}`} />}
                                                                                 {!isBlocked && <div className={`absolute bottom-0 left-0 h-[6px] transition-all duration-500 ${cls.hasLog ? 'w-full' : 'w-0'} ${cls.isSpecialEvent ? 'bg-blue-500' : 'bg-emerald-400'}`}></div>}
                                                                             </button>
@@ -548,27 +560,13 @@
                                                             const dateObj=new Date(y,m,d); const dk=formatDateKey(dateObj); const ho=getHoliday(dk); const isH=!!ho; const classes=getDayClasses(dateObj); const exams=getGlobalExams(dk, currentSemesterData.settings);
                                                             grid.push(
                                                                 <div key={d} 
-                                                                    // 🌟 核心優化：點擊跳轉週視圖
                                                                     onClick={()=>{if(isH) openModal('editHoliday',dk); else {setCurrentDate(dateObj);setCalendarViewMode('week');}}} 
-                                                                    // 🌟 核心優化：攔截系統長按/右鍵，改為呼叫停課設定
-                                                                    onContextMenu={(e) => {
-                                                                        e.preventDefault();
-                                                                        if(!isH) openModal('editHoliday', dk);
-                                                                    }}
+                                                                    onContextMenu={(e) => { e.preventDefault(); if(!isH) openModal('editHoliday', dk); }}
                                                                     className={`aspect-square rounded-[24px] border p-1 md:p-2 flex flex-col items-center cursor-pointer group relative native-touch ${isToday(dateObj)?'ring-2 ring-indigo-500':''} ${isH?'bg-rose-50 border-rose-100':'bg-white hover:bg-slate-50'}`}>
                                                                     
-                                                                    {/* 🌟 核心優化：恢復電腦版隱形旗幟 (手機版完全隱藏，靠長按觸發) */}
-                                                                    {!isH && (
-                                                                        <button 
-                                                                            onClick={(e)=>{e.stopPropagation();openModal('editHoliday',dk);}} 
-                                                                            className="absolute top-2 right-2 w-7 h-7 hidden md:flex items-center justify-center opacity-0 group-hover:opacity-100 text-slate-400 hover:text-rose-500 hover:bg-rose-50 rounded-xl transition-all z-10" 
-                                                                            title="點擊或長按日期以設為停課日"
-                                                                        >
-                                                                            <i className="ph-bold ph-flag text-sm"></i>
-                                                                        </button>
-                                                                    )}
-
+                                                                    {!isH && <button onClick={(e)=>{e.stopPropagation();openModal('editHoliday',dk);}} className="absolute top-2 right-2 w-7 h-7 hidden md:flex items-center justify-center opacity-0 group-hover:opacity-100 text-slate-400 hover:text-rose-500 hover:bg-rose-50 rounded-xl transition-all z-10" title="點擊或長按日期以設為停課日"><i className="ph-bold ph-flag text-sm"></i></button>}
                                                                     <span className={`text-xs font-black mb-1 mt-1 md:mt-0 ${isH?'text-rose-500':'text-slate-600'}`}>{d}</span>
+                                                                    
                                                                     {isH ? (<div className="text-center mt-1"><i className="ph-fill ph-tree-palm text-rose-400 text-lg md:text-xl"></i><div className="text-[10px] font-bold text-rose-600 leading-tight mt-1">{ho.desc}</div></div>) : (
                                                                         <div className="flex flex-col items-center gap-1 w-full mt-1">
                                                                             {exams.map((ex,i)=><div key={i} className={`text-[9px] font-black border rounded py-[1px] text-center w-full ${ex.color}`}>{ex.label}{ex.exam}</div>)}
@@ -636,7 +634,32 @@
                                         </div>
                                     )}
 
-                                    {modalType === 'devicePairing' && (<div className="space-y-6"><div className="p-6 bg-indigo-50 rounded-[32px] text-center"><p className="text-[10px] font-black text-indigo-400 mb-2">本機同步金鑰</p><div className="flex justify-center gap-3"><span className="text-3xl font-black text-indigo-700 tracking-widest">{syncKey}</span></div></div><div className="flex gap-2"><input type="text" value={inputSyncKey} onChange={(e)=>setInputSyncKey(e.target.value.toUpperCase())} placeholder="PHY-XXXXX" className="flex-1 p-4 bg-slate-50 border-2 rounded-2xl font-black text-center tracking-widest uppercase outline-none" /><button onClick={() => { if(inputSyncKey.length > 3){ setSyncKey(inputSyncKey); setIsModalOpen(false); } }} className="px-6 bg-slate-800 text-white rounded-2xl font-black">連線</button></div></div>)}
+                                    {modalType === 'devicePairing' && (
+                                        <div className="space-y-6">
+                                            <div className="p-6 bg-indigo-50 rounded-[32px] text-center">
+                                                <p className="text-[10px] font-black text-indigo-400 mb-2">本機同步金鑰</p>
+                                                <div className="flex justify-center items-center gap-3">
+                                                    <span className="text-3xl font-black text-indigo-700 tracking-widest">{isCopied ? "已複製!" : syncKey}</span>
+                                                    {!isCopied && (
+                                                        <button onClick={() => { 
+                                                            navigator.clipboard.writeText(syncKey).then(()=> {
+                                                                setIsCopied(true);
+                                                                setTimeout(()=> setIsCopied(false), 2000);
+                                                            }).catch(err => {
+                                                                // 備用方案
+                                                                const el = document.createElement('textarea');
+                                                                el.value = syncKey; document.body.appendChild(el); el.select(); document.execCommand('copy'); document.body.removeChild(el);
+                                                                setIsCopied(true); setTimeout(()=> setIsCopied(false), 2000);
+                                                            });
+                                                        }} className="p-2 hover:bg-white rounded-xl text-indigo-400 shadow-sm transition-all active:scale-90">
+                                                            <i className="ph-bold ph-copy text-xl"></i>
+                                                        </button>
+                                                    )}
+                                                </div>
+                                            </div>
+                                            <div className="flex gap-2"><input type="text" value={inputSyncKey} onChange={(e)=>setInputSyncKey(e.target.value.toUpperCase())} placeholder="PHY-XXXXX" className="flex-1 p-4 bg-slate-50 border-2 rounded-2xl font-black text-center tracking-widest uppercase outline-none" /><button onClick={() => { if(inputSyncKey.length > 3){ setSyncKey(inputSyncKey); setIsModalOpen(false); } }} className="px-6 bg-slate-800 text-white rounded-2xl font-black">連線</button></div>
+                                        </div>
+                                    )}
                                     
                                     {modalType === 'classJournal' && (
                                         <div className="space-y-4">
@@ -771,11 +794,12 @@
 
                                     {modalType === 'backupRestore' && (<div className="space-y-6"><div className="bg-sky-50 p-6 rounded-[32px] text-center"><i className="ph-bold ph-download-simple text-4xl text-sky-500 mb-2"></i><h4 className="font-black">下載備份檔</h4><p className="text-xs text-slate-500 mb-4">將所有設定下載為 JSON</p><button onClick={handleExport} className="bg-sky-500 text-white px-6 py-3 rounded-xl font-bold">匯出</button></div><div className="bg-rose-50 p-6 rounded-[32px] text-center relative"><i className="ph-bold ph-upload-simple text-4xl text-rose-500 mb-2"></i><h4 className="font-black">還原備份檔</h4><p className="text-xs text-rose-400 mb-4">⚠️ 將覆蓋目前所有資料</p><label className="bg-rose-500 text-white px-6 py-3 rounded-xl font-bold cursor-pointer">匯入<input type="file" accept=".json" className="hidden" onChange={handleImport} /></label></div></div>)}
                                     
+                                    {/* 🌟 修改：移除多餘的預設文字說明 */}
                                     {modalType === 'editHoliday' && (
                                         <div className="space-y-4 text-center">
                                             <i className="ph-fill ph-tree-palm text-4xl text-rose-400"></i>
                                             <h4 className="font-black text-lg">{formData.holidayDate} 停課設定</h4>
-                                            <input type="text" value={formData.holidayDesc} onChange={(e)=>setFormData({...formData, holidayDesc:e.target.value})} className="w-full p-4 border-2 border-rose-100 rounded-2xl outline-none text-center bg-rose-50 text-rose-700 font-bold" placeholder="例如: 校慶補假 (預設為國定假日)"/>
+                                            <input type="text" value={formData.holidayDesc} onChange={(e)=>setFormData({...formData, holidayDesc:e.target.value})} className="w-full p-4 border-2 border-rose-100 rounded-2xl outline-none text-center bg-rose-50 text-rose-700 font-bold" placeholder="例如: 校慶補假"/>
                                             <div className="flex gap-3">
                                                 <button onClick={()=>{const n={...data};n[selectedYear][selectedSemester].settings.holidays=(n[selectedYear][selectedSemester].settings.holidays||[]).filter(h=>(typeof h==='string'?h:h.date)!==formData.holidayDate);setData(n);setIsModalOpen(false);}} className="flex-1 py-4 bg-slate-100 text-rose-400 font-black rounded-2xl hover:bg-rose-50 flex justify-center items-center gap-2"><i className="ph-bold ph-trash"></i> 刪除此停課日</button>
                                                 <button onClick={handleSave} className="flex-1 py-4 bg-rose-500 text-white font-black rounded-2xl">儲存設定</button>
