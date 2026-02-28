@@ -1153,7 +1153,13 @@
                                                                         <button onClick={() => moveSyllabus(k, idx, 1)} disabled={idx===(formData.syllabusData[k].length-1)} className="text-slate-300 hover:text-indigo-600 disabled:opacity-30"><i className="ph-bold ph-arrow-down text-[10px]"></i></button>
                                                                     </div>
                                                                     <input type="text" value={ch.title} onChange={(e)=>{const n={...formData.syllabusData};n[k][idx].title=e.target.value;setFormData({...formData,syllabusData:n})}} className="flex-1 p-2 bg-slate-50 rounded outline-none font-bold text-sm"/>
-                                                                    <div className="flex items-center gap-1 bg-slate-50 px-2 rounded text-sm"><input type="number" value={ch.pages||''} onChange={(e)=>{const n={...formData.syllabusData};n[k][idx].pages=parseInt(e.target.value)||0;setFormData({...formData,syllabusData:n})}} className="w-10 p-2 bg-transparent outline-none text-center font-black" placeholder="-"/><span className="text-xs text-slate-400">頁</span></div>
+                                                                    
+                                                                    {/* 🌟 核心修復：將 w-10 p-2 更改為 w-14 py-2 px-1，釋放數字顯示空間 */}
+                                                                    <div className="flex items-center gap-1 bg-slate-50 px-2 rounded text-sm">
+                                                                        <input type="number" value={ch.pages||''} onChange={(e)=>{const n={...formData.syllabusData};n[k][idx].pages=parseInt(e.target.value)||0;setFormData({...formData,syllabusData:n})}} className="w-14 py-2 px-1 bg-transparent outline-none text-center font-black" placeholder="-"/>
+                                                                        <span className="text-xs text-slate-400">頁</span>
+                                                                    </div>
+                                                                    
                                                                     <button onClick={()=>{const n={...formData.syllabusData};n[k].splice(idx,1);setFormData({...formData,syllabusData:n})}} className="p-2 text-rose-300 hover:text-rose-500 bg-rose-50 rounded-lg"><i className="ph-bold ph-trash"></i></button>
                                                                 </div>
                                                             ))}
