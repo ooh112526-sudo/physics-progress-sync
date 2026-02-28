@@ -229,8 +229,9 @@
                 let maxPeriods = 0; const classPeriods = {}; const result = {}; let globalDaysToExam = 999; 
 
                 currentCourse.classes.forEach(cls => {
-                    let remainingPeriods = 0;
-                    let totalPeriods = 0; // 🌟 新增變數：用來記錄該次段考的「總法定排課數」
+                    let remainingPeriods = 0; // 這是給引擎用的「快照剩餘」
+                    let totalPeriods = 0;     // 總節數
+                    let taughtPeriods = 0;    // 🌟 新增變數：記錄真實已經上完、有填日誌的節數
                     let track = (currentCourse.system === '技高三' ? 'v3' : (currentCourse.system === '綜高三' ? 's3' : 'common'));
                     const trackData = currentSemesterData.settings[track] || {};
                     const allExamDates = [...(trackData.exam1 || []), ...(trackData.exam2 || []), ...(trackData.exam3 || [])].sort();
@@ -248,11 +249,10 @@
                     }
 
                     if (nextExamDateStr) {
-                        // 🌟 核心引擎 2：計算「總共 X 節」
                         let periodStartStr = currentSemesterData.settings.startDate;
                         if (lastExamDateStr) {
                             const tempD = parseDateLocal(lastExamDateStr);
-                            tempD.setDate(tempD.getDate() + 1); // 總節數從「上次段考隔天」開始算
+                            tempD.setDate(tempD.getDate() + 1); 
                             periodStartStr = formatDateKey(tempD);
                         }
                         if (periodStartStr < currentSemesterData.settings.startDate) {
@@ -262,7 +262,7 @@
                         const pStart = parseDateLocal(periodStartStr);
                         const pEnd = parseDateLocal(nextExamDateStr);
                         
-                        // 模擬該段考區間的每一天，算出總排課節數 (已扣除國定假日、段考日、週末)
+                        // 模擬該段考區間的每一天，算出總排課節數
                         for (let d = new Date(pStart); d < pEnd; d.setDate(d.getDate() + 1)) {
                             const dStr = formatDateKey(d); 
                             const dayOfWeek = d.getDay();
@@ -270,9 +270,15 @@
                             
                             const scheds = cls.schedule?.filter(s => s.day === dayOfWeek) || [];
                             totalPeriods += scheds.length;
+
+                            // 🌟 真實消耗計算：只要該節次有日誌紀錄，就代表真實消耗了 1 節
+                            scheds.forEach(s => {
+                                const existingLog = cls.logs?.find(l => l.date === dStr && l.period === s.period);
+                                if (existingLog) taughtPeriods++;
+                            });
                         }
 
-                        // 🌟 計算「剩餘 n 節」 (維持原本快照邏輯，確保班級間比較基礎公平)
+                        // 計算「快照剩餘 n 節」 (維持原本邏輯，確保紅黃綠燈比較基礎公平)
                         const endDate = parseDateLocal(nextExamDateStr);
                         globalDaysToExam = Math.ceil((endDate - realToday) / (1000 * 60 * 60 * 24));
                         for (let d = new Date(snapshotDate); d < endDate; d.setDate(d.getDate() + 1)) {
@@ -282,14 +288,23 @@
                             scheds.forEach(s => { const existingLog = cls.logs?.find(l => l.date === dStr && l.period === s.period); if (!existingLog || !existingLog.event) remainingPeriods++; });
                         }
                     }
-                    classPeriods[cls.id] = { remaining: remainingPeriods, total: totalPeriods }; 
+                    
+                    // 🌟 雙軌儲存：同時記錄「給引擎看的快照」與「給老師看的真實剩餘」
+                    classPeriods[cls.id] = { 
+                        snapshotRemaining: remainingPeriods, 
+                        realRemaining: totalPeriods - taughtPeriods,
+                        total: totalPeriods 
+                    }; 
                     if (remainingPeriods > maxPeriods) maxPeriods = remainingPeriods;
                 });
 
                 currentCourse.classes.forEach(cls => {
-                    const periods = classPeriods[cls.id]?.remaining || 0; 
+                    const snapshotPeriods = classPeriods[cls.id]?.snapshotRemaining || 0; 
+                    const realPeriods = classPeriods[cls.id]?.realRemaining || 0;
                     const totalPeriods = classPeriods[cls.id]?.total || 0;
-                    const delta = maxPeriods - periods;
+                    
+                    // 🌟 燈號警示系統：嚴格使用「快照基準(snapshotPeriods)」相減，避免非同步假警報
+                    const delta = maxPeriods - snapshotPeriods;
                     let status = 'green', colorClass = 'bg-emerald-400', textClass = 'text-emerald-500', barBgClass = 'bg-emerald-50 text-emerald-600 border border-emerald-200', msg = '進度完美同步';
                     if (delta >= 3) {
                         status = 'red'; const isUrgent = globalDaysToExam < 21 && globalDaysToExam > 0;
@@ -297,8 +312,11 @@
                         else { colorClass = 'bg-rose-400 opacity-80'; textClass = 'text-rose-500'; barBgClass = 'bg-rose-50 text-rose-500 border border-rose-100'; msg = `落後 ${delta} 節 (尚有 ${globalDaysToExam} 天)`; }
                     } else if (delta === 2) { status = 'yellow'; colorClass = 'bg-amber-400'; textClass = 'text-amber-600'; barBgClass = 'bg-amber-50 text-amber-600 border border-amber-200'; msg = `微幅脫節 2 節`; } 
                     else if (delta === 1) { msg = `微幅落後 1 節`; textClass = 'text-teal-600'; colorClass = 'bg-teal-400'; barBgClass = 'bg-teal-50 text-teal-600 border border-teal-200'; }
-                    const percentage = maxPeriods > 0 ? (periods / maxPeriods) * 100 : 0;
-                    result[cls.id] = { periods, totalPeriods, delta, status, colorClass, textClass, barBgClass, msg, percentage, daysToExam: globalDaysToExam };
+                    
+                    const percentage = maxPeriods > 0 ? (snapshotPeriods / maxPeriods) * 100 : 0;
+                    
+                    // 🌟 輸出給畫面：丟出「真實剩餘 (realPeriods)」讓老師看個爽快
+                    result[cls.id] = { periods: realPeriods, totalPeriods, delta, status, colorClass, textClass, barBgClass, msg, percentage, daysToExam: globalDaysToExam };
                 });
                 return result;
             }, [currentCourse, currentSemesterData.settings]); 
