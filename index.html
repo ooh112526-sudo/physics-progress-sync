@@ -12,7 +12,7 @@
     
     <!-- 引入 Tailwind CSS -->
     <script src="https://cdn.tailwindcss.com"></script>
-    <!-- 引入 Phosphor Icons -->
+    <!-- 引入 Phosphor Icons (防白屏字體圖示庫) -->
     <script src="https://unpkg.com/@phosphor-icons/web"></script>
     
     <style>
@@ -52,7 +52,7 @@
 
     <script type="text/babel">
         const { useState, useEffect, useMemo, Fragment } = React;
-        const APP_VERSION = "v8.3.1 (課表邏輯校準版)";
+        const APP_VERSION = "v8.4.0 (全功能無損還原版)";
 
         const THEME_COLORS = [
             { id: 'sky', name: '晴空水藍', h: 199, s: 89, base: 'bg-sky-400', light: 'bg-sky-50', text: 'text-sky-800' },
@@ -159,6 +159,23 @@
                 return results;
             };
 
+            // 💡 尋回功能 5: 歷史學期選單
+            const allAvailableSemesters = useMemo(() => {
+                const list = [];
+                Object.keys(data).forEach(y => {
+                    Object.keys(data[y]).forEach(s => { list.push({ year: y, semester: s, label: `${y}學年度 ${s}` }); });
+                });
+                return list.sort((a, b) => (a.year !== b.year ? parseInt(b.year) - parseInt(a.year) : b.semester.localeCompare(a.semester)));
+            }, [data]);
+
+            // 💡 尋回功能 2: 段考日期格式化與倒數顯示
+            const formatDatesForDisplay = (dates) => {
+                if (!dates || (Array.isArray(dates) && dates.length === 0)) return '---';
+                const dateArr = Array.isArray(dates) ? dates : [dates];
+                const parts = dateArr[0].split('-');
+                return `${selectedYear}/${parts[1]}/${dateArr.map(d => d.split('-')[2]).join('、')}`;
+            };
+
             // ⚡ 核心演算法：進度健康度計算
             const healthData = useMemo(() => {
                 if (!currentCourse || !currentSemesterData.settings.startDate) return {};
@@ -200,7 +217,7 @@
                     if (delta >= 3) {
                         status = 'red'; const isUrgent = globalDaysToExam < 21 && globalDaysToExam > 0;
                         if (isUrgent) { colorClass = 'bg-rose-500'; textClass = 'text-rose-600'; barBgClass = 'bg-rose-50 text-rose-600 border border-rose-300 font-bold'; msg = `⚠️ 逼近段考，嚴重落後 ${delta} 節`; }
-                        else { colorClass = 'bg-rose-400'; textClass = 'text-rose-500'; barBgClass = 'bg-rose-50 text-rose-500 border border-rose-100'; msg = `落後 ${delta} 節 (尚有 ${globalDaysToExam} 天)`; }
+                        else { colorClass = 'bg-rose-400 opacity-80'; textClass = 'text-rose-500'; barBgClass = 'bg-rose-50 text-rose-500 border border-rose-100'; msg = `落後 ${delta} 節 (尚有 ${globalDaysToExam} 天)`; }
                     } else if (delta === 2) { status = 'yellow'; colorClass = 'bg-amber-400'; textClass = 'text-amber-600'; barBgClass = 'bg-amber-50 text-amber-600 border border-amber-200'; msg = `微幅脫節 2 節`; } 
                     else if (delta === 1) { msg = `微幅落後 1 節`; textClass = 'text-teal-600'; colorClass = 'bg-teal-400'; barBgClass = 'bg-teal-50 text-teal-600 border border-teal-200'; }
                     const percentage = maxPeriods > 0 ? (periods / maxPeriods) * 100 : 0;
@@ -212,7 +229,14 @@
             // --- 功能操作邏輯 ---
             const openModal = (type, extra = null) => {
                 setModalType(type);
-                if (type === 'classJournal') { setEditingCell({ classId: extra.cls.id, date: formatDateKey(extra.date), period: extra.period }); setEditingClassId(extra.cls.id); const existingLog = extra.cls.logs.find(l => l.date === formatDateKey(extra.date) && l.period === extra.period); const lastLog = extra.cls.logs[extra.cls.logs.length - 1] || { chapter: currentCourse.syllabus?.exam1?.[0]?.title || '', page: '1' }; setFormData({ ...formData, logChapter: existingLog ? existingLog.chapter : lastLog.chapter, logPage: existingLog ? existingLog.page : lastLog.page, logFinishedChapters: extra.cls.finishedChapters || [], logEvent: existingLog?.event || null, logEventText: existingLog?.eventText || '' }); }
+                if (type === 'classJournal') { 
+                    setEditingCell({ classId: extra.cls.id, date: formatDateKey(extra.date), period: extra.period }); 
+                    setEditingClassId(extra.cls.id); 
+                    const existingLog = extra.cls.logs.find(l => l.date === formatDateKey(extra.date) && l.period === extra.period); 
+                    const firstChapter = currentCourse.syllabus?.exam1?.[0]?.title || '';
+                    const lastLog = extra.cls.logs[extra.cls.logs.length - 1] || { chapter: firstChapter, page: '1' }; 
+                    setFormData({ ...formData, logChapter: existingLog ? existingLog.chapter : lastLog.chapter, logPage: existingLog ? existingLog.page : lastLog.page, logFinishedChapters: extra.cls.finishedChapters || [], logEvent: existingLog?.event || null, logEventText: existingLog?.eventText || '' }); 
+                }
                 else if (type === 'editHoliday') { const existing = getHoliday(extra); setFormData({ ...formData, holidayDate: extra, holidayDesc: existing ? existing.desc : '' }); }
                 else if (type === 'switchSemester') { setFormData({ ...formData, year: selectedYear, semester: selectedSemester, importSource: 'none' }); }
                 else if (type === 'addCourse') { setFormData({ ...formData, name: '', color: 'sky', system: '技高一' }); }
@@ -234,9 +258,27 @@
 
             const handleSave = () => {
                 const newData = { ...data }; 
-                if (modalType === 'switchSemester') { if (!newData[formData.year]) newData[formData.year] = {}; if (!newData[formData.year][formData.semester]) newData[formData.year][formData.semester] = { settings: { startDate: '', common: {exam1:[], exam2:[], exam3:[]}, v3: {exam1:[], exam2:[], exam3:[]}, s3: {exam1:[], exam2:[], exam3:[]}, holidays: [] }, courses: [] }; setSelectedYear(formData.year); setSelectedSemester(formData.semester); setSelectedCourseId(null); setData(newData); setIsModalOpen(false); return; }
+                if (modalType === 'switchSemester') { 
+                    if (!newData[formData.year]) newData[formData.year] = {}; 
+                    if (!newData[formData.year][formData.semester]) {
+                        let inheritedCourses = [];
+                        if (formData.importSource !== 'none') {
+                            const [sYear, sSem] = formData.importSource.split('-');
+                            const sourceData = data[sYear][sSem];
+                            inheritedCourses = sourceData.courses.map(course => ({ ...course, classes: course.classes.map(cls => ({ id: cls.id, name: cls.name, schedule: [], logs: [], finishedChapters: [] })) }));
+                        }
+                        newData[formData.year][formData.semester] = { settings: { startDate: '', common: {exam1:[], exam2:[], exam3:[]}, v3: {exam1:[], exam2:[], exam3:[]}, s3: {exam1:[], exam2:[], exam3:[]}, holidays: [] }, courses: inheritedCourses }; 
+                    }
+                    setSelectedYear(formData.year); setSelectedSemester(formData.semester); setSelectedCourseId(null); setData(newData); setIsModalOpen(false); return; 
+                }
                 const semester = newData[selectedYear][selectedSemester];
-                if (modalType === 'classJournal') { const cls = semester.courses.find(c => c.classes.some(cl => cl.id === editingCell.classId)).classes.find(cl => cl.id === editingCell.classId); cls.finishedChapters = formData.logFinishedChapters; const logEntry = { date: editingCell.date, period: editingCell.period, chapter: formData.logChapter, page: formData.logPage, event: formData.logEvent, eventText: formData.logEventText }; const existingIdx = cls.logs.findIndex(l => l.date === editingCell.date && l.period === editingCell.period); if (existingIdx >= 0) cls.logs[existingIdx] = logEntry; else cls.logs.push(logEntry); }
+                if (modalType === 'classJournal') { 
+                    const cls = semester.courses.find(c => c.classes.some(cl => cl.id === editingCell.classId)).classes.find(cl => cl.id === editingCell.classId); 
+                    cls.finishedChapters = formData.logFinishedChapters; 
+                    const logEntry = { date: editingCell.date, period: editingCell.period, chapter: formData.logChapter, page: formData.logPage, event: formData.logEvent, eventText: formData.logEventText }; 
+                    const existingIdx = cls.logs.findIndex(l => l.date === editingCell.date && l.period === editingCell.period); 
+                    if (existingIdx >= 0) cls.logs[existingIdx] = logEntry; else cls.logs.push(logEntry); 
+                }
                 else if (modalType === 'addCourse') { if (!formData.name) return; const newId = `c-${Date.now()}`; semester.courses.push({ id: newId, system: formData.system, name: formData.name, themeId: formData.color, syllabus: JSON.parse(JSON.stringify(DEFAULT_SYLLABUS)), classes: [] }); setSelectedCourseId(newId); }
                 else if (modalType === 'addClass') { if (!formData.className) return; semester.courses.find(c => c.id === selectedCourseId).classes.push({ id: `cl-${Date.now()}`, name: formData.className, schedule: [], logs: [], finishedChapters: [] }); }
                 else if (modalType === 'editHoliday') { const f = (semester.settings.holidays || []).filter(h => (typeof h === 'string' ? h : h.date) !== formData.holidayDate); if (formData.holidayDesc.trim()) f.push({ date: formData.holidayDate, desc: formData.holidayDesc }); semester.settings.holidays = f; }
@@ -246,6 +288,54 @@
             };
 
             const toggleSchedule = (dayIndex, period) => { const newData = { ...data }; const cls = newData[selectedYear][selectedSemester].courses.find(c => c.id === selectedCourseId)?.classes.find(c => c.id === editingClassId); if (cls) { const exists = cls.schedule.find(s => s.day === dayIndex && s.period === period); if (exists) cls.schedule = cls.schedule.filter(s => !(s.day === dayIndex && s.period === period)); else cls.schedule.push({ day: dayIndex, period }); setData(newData); } };
+
+            // 💡 尋回功能 3: 課表編輯器的衝堂偵測
+            const getConflictingClassName = (day, period) => {
+                for (const course of currentCourses) {
+                    for (const cls of course.classes) {
+                        if (cls.id === editingClassId) continue;
+                        if (cls.schedule?.some(s => s.day === day && s.period === period)) return cls.name;
+                    }
+                }
+                return null;
+            };
+
+            // 💡 尋回功能 1: 智慧日誌選單的推頁演算法
+            const handleNextProgress = () => {
+                if(!currentCourse || !currentCourse.syllabus) return;
+                const currentCh = formData.logChapter;
+                const newFinished = formData.logFinishedChapters.includes(currentCh) ? formData.logFinishedChapters : [...formData.logFinishedChapters, currentCh];
+                let targetPage = formData.logPage; 
+                const allChapters = [...(currentCourse.syllabus.exam1 || []), ...(currentCourse.syllabus.exam2 || []), ...(currentCourse.syllabus.exam3 || [])];
+                const currentChData = allChapters.find(ch => ch.title === currentCh);
+                if (currentChData && currentChData.pages > 0) targetPage = currentChData.pages.toString();
+                setFormData({ ...formData, logFinishedChapters: newFinished, logPage: targetPage });
+            };
+
+            // 計算目前活躍的段考範圍 (給智慧選單用)
+            let activeLogGroups = ['exam1', 'exam2', 'exam3']; 
+            if (modalType === 'classJournal' && editingCell && currentCourse) {
+                let track = (currentCourse.system === '技高三' ? 'v3' : (currentCourse.system === '綜高三' ? 's3' : 'common'));
+                const trackData = currentSemesterData.settings[track] || {};
+                const e1 = trackData.exam1?.length ? [...trackData.exam1].sort().pop() : null;
+                const e2 = trackData.exam2?.length ? [...trackData.exam2].sort().pop() : null;
+                let currentExamByDate = 'exam3';
+                if (e1 && editingCell.date <= e1) currentExamByDate = 'exam1';
+                else if (e2 && editingCell.date <= e2) currentExamByDate = 'exam2';
+                let currentExamByChapter = 'exam1';
+                if (currentCourse.syllabus) {
+                if ((currentCourse.syllabus.exam2 || []).some(ch => ch.title === formData.logChapter)) currentExamByChapter = 'exam2';
+                else if ((currentCourse.syllabus.exam3 || []).some(ch => ch.title === formData.logChapter)) currentExamByChapter = 'exam3';
+                }
+                activeLogGroups = [...new Set([currentExamByDate, currentExamByChapter])].sort();
+            }
+
+            let currentChapterMaxPages = null;
+            if (modalType === 'classJournal' && currentCourse?.syllabus && formData.logChapter) {
+                const allChapters = [...(currentCourse.syllabus.exam1 || []), ...(currentCourse.syllabus.exam2 || []), ...(currentCourse.syllabus.exam3 || [])];
+                const currentChData = allChapters.find(ch => ch.title === formData.logChapter);
+                if (currentChData?.pages > 0) currentChapterMaxPages = currentChData.pages;
+            }
 
             const getDayClasses = (date) => {
                 const dayIdx = date.getDay(); const dateKey = formatDateKey(date); const holidayObj = getHoliday(dateKey); const result = [];
@@ -313,6 +403,10 @@
                         <div className="w-full bg-white border-b px-4 lg:px-8 z-20 h-20 flex items-center justify-between shrink-0">
                             <div className="flex items-center gap-2 lg:gap-4">
                                 <button onClick={() => setIsSidebarOpen(true)} className="lg:hidden p-2 -ml-2 text-slate-600"><i className="ph-bold ph-list text-2xl"></i></button>
+                                
+                                {/* 💡 尋回功能 4: 今天導航按鈕 */}
+                                <button onClick={() => setCurrentDate(new Date())} className="px-4 py-2 bg-slate-900 text-white rounded-full text-[11px] font-black shadow-lg shadow-slate-200 active:scale-95 tracking-widest hover:bg-slate-800 transition-colors whitespace-nowrap hidden md:block">今天</button>
+
                                 <div className="flex bg-slate-100 p-1 rounded-xl">
                                     <button onClick={() => setActiveMainView('dashboard')} className={`flex items-center gap-1.5 px-3 py-2 rounded-lg text-xs font-black transition-all ${activeMainView === 'dashboard' ? 'bg-white text-slate-800 shadow-sm' : 'text-slate-500 hover:text-slate-700'}`}><i className="ph-bold ph-squares-four text-base"></i> 儀表板</button>
                                     <button onClick={() => setActiveMainView('calendar')} className={`flex items-center gap-1.5 px-3 py-2 rounded-lg text-xs font-black transition-all ${activeMainView === 'calendar' ? 'bg-white text-slate-800 shadow-sm' : 'text-slate-500 hover:text-slate-700'}`}><i className="ph-bold ph-calendar-blank text-base"></i> 行事曆</button>
@@ -339,7 +433,15 @@
                                     <div className="space-y-8 animate-in">
                                         <div className="flex items-center gap-5 bg-white p-6 lg:p-8 rounded-[40px] shadow-sm border border-slate-100 relative overflow-hidden">
                                             <div className={`p-5 rounded-2xl text-white shadow-lg ${currentTheme.base}`}><i className="ph-fill ph-book-open-text text-4xl"></i></div>
-                                            <div><h1 className="text-2xl font-black text-slate-800">{currentCourse.system}{currentCourse.name}</h1><p className="text-sm font-bold text-slate-400 mt-1">管理 {currentCourse.classes?.length||0} 個班級</p></div>
+                                            <div>
+                                                <h1 className="text-2xl font-black text-slate-800">{currentCourse.system}{currentCourse.name}</h1>
+                                                {/* 💡 尋回功能 2: 段考倒數雷達 */}
+                                                <div className="flex items-center gap-3 mt-1">
+                                                    <p className="text-sm text-slate-500 font-medium">共 {currentCourse.classes?.length||0} 個班級</p>
+                                                    <span className="w-1.5 h-1.5 rounded-full bg-slate-300"></span>
+                                                    <p className="text-sm text-indigo-500 font-bold flex items-center gap-1"><i className="ph-fill ph-shield-warning text-base"></i> 段考倒數：{formatDatesForDisplay(currentCourse.system === '技高三' ? currentSemesterData.settings.v3.exam1 : currentCourse.system === '綜高三' ? currentSemesterData.settings.s3.exam1 : currentSemesterData.settings.common.exam1)}</p>
+                                                </div>
+                                            </div>
                                             <div className={`absolute top-0 right-0 w-32 h-32 opacity-5 rounded-full -mr-10 -mt-10 ${currentTheme.base}`}></div>
                                         </div>
                                         
@@ -350,7 +452,6 @@
                                                 <div key={cls.id} className="bg-white p-6 rounded-[32px] border border-slate-100 shadow-sm hover:shadow-md transition-all group">
                                                     <div className="flex justify-between items-center mb-4"><span className="text-lg font-black text-slate-700">{cls.name}</span><button onClick={() => openModal('editSchedule', cls.id)} className="p-2 bg-slate-50 hover:text-indigo-600 rounded-xl"><i className="ph-bold ph-clock text-sm"></i></button></div>
                                                     
-                                                    {/* 💡 修正：使用精準的陣列對應來避免星期顯示錯位，並加入自動排序 */}
                                                     <div className="flex flex-wrap gap-2 mb-4">
                                                         {cls.schedule.length > 0 
                                                             ? [...cls.schedule].sort((a,b)=>a.day!==b.day ? a.day-b.day : a.period-b.period).map((s, i) => <span key={i} className={`text-[11px] font-black px-2 py-1 rounded-lg ${currentTheme.light} ${currentTheme.text}`}>週{['日','一','二','三','四','五','六'][s.day]}第{s.period}節</span>) 
@@ -429,16 +530,74 @@
                     {isModalOpen && (
                         <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-md z-50 flex items-center justify-center p-4">
                             <div className={`bg-white rounded-[48px] shadow-2xl w-full ${modalType==='semesterSettings'||modalType==='editSyllabus'?'max-w-4xl':'max-w-md'} overflow-hidden animate-in flex flex-col max-h-[90vh]`}>
-                                <div className="px-8 py-6 bg-slate-50 border-b flex items-center justify-between shrink-0"><h3 className="font-black text-slate-800 uppercase">{modalType==='addCourse'?'新增課程':modalType==='addClass'?'新增班級':modalType==='editSchedule'?'設定課表':modalType==='classJournal'?'教學日誌':modalType==='devicePairing'?'跨裝置同步':modalType==='semesterSettings'?'行事曆分流設定':modalType==='editSyllabus'?'編輯課綱':modalType==='backupRestore'?'資料備份與還原':'系統訊息'}</h3><button onClick={()=>setIsModalOpen(false)}><i className="ph-bold ph-x text-xl text-slate-400"></i></button></div>
+                                <div className="px-8 py-6 bg-slate-50 border-b flex items-center justify-between shrink-0"><h3 className="font-black text-slate-800 uppercase">{modalType==='addCourse'?'新增課程':modalType==='addClass'?'新增班級':modalType==='editSchedule'?'設定課表':modalType==='classJournal'?'教學日誌':modalType==='devicePairing'?'跨裝置同步':modalType==='semesterSettings'?'行事曆分流設定':modalType==='editSyllabus'?'編輯課綱':modalType==='switchSemester'?'切換學期':modalType==='backupRestore'?'資料備份與還原':'系統訊息'}</h3><button onClick={()=>setIsModalOpen(false)}><i className="ph-bold ph-x text-xl text-slate-400"></i></button></div>
                                 <div className="p-8 overflow-y-auto">
+                                    
+                                    {/* 💡 尋回功能 5: 切換學期與繼承 */}
+                                    {modalType === 'switchSemester' && (
+                                        <div className="space-y-6">
+                                            <div className="flex gap-4">
+                                                <div className="flex-1"><label className="block text-[10px] font-black text-slate-400 mb-2">學年度</label><div className="flex items-center justify-between bg-slate-50 p-2 rounded-2xl border-2"><button onClick={() => setFormData({...formData, year: (parseInt(formData.year)-1).toString()})} className="p-2 hover:text-indigo-600"><i className="ph-bold ph-minus"></i></button><span className="text-xl font-black">{formData.year}</span><button onClick={() => setFormData({...formData, year: (parseInt(formData.year)+1).toString()})} className="p-2 hover:text-indigo-600"><i className="ph-bold ph-plus"></i></button></div></div>
+                                                <div className="flex-1"><label className="block text-[10px] font-black text-slate-400 mb-2">學期</label><div className="flex gap-2 bg-slate-50 p-1.5 rounded-2xl border-2">{['上學期','下學期'].map(s=><button key={s} onClick={()=>setFormData({...formData, semester:s})} className={`flex-1 py-2 rounded-xl text-xs font-black ${formData.semester===s?'bg-white shadow text-indigo-600':'text-slate-400'}`}>{s}</button>)}</div></div>
+                                            </div>
+                                            <div className="pt-4 border-t">
+                                                <label className="block text-[10px] font-black text-slate-400 mb-2">📥 帶入既有課程設定 (選填)</label>
+                                                <select value={formData.importSource} onChange={(e)=>setFormData({...formData, importSource:e.target.value})} className="w-full p-4 bg-slate-50 rounded-2xl border-2 font-bold outline-none">
+                                                    <option value="none">不帶入，建立空學期</option>
+                                                    {allAvailableSemesters.map(s=><option key={`${s.year}-${s.semester}`} value={`${s.year}-${s.semester}`}>{s.label}</option>)}
+                                                </select>
+                                            </div>
+                                            <button onClick={handleSave} className="w-full py-4 bg-indigo-600 text-white font-black rounded-2xl">切換 / 建立學期</button>
+                                        </div>
+                                    )}
+
                                     {modalType === 'addCourse' && (<div className="space-y-4"><select value={formData.system} onChange={(e)=>setFormData({...formData, system:e.target.value})} className="w-full p-4 bg-slate-50 rounded-2xl border-2 font-bold outline-none">{['技高一','技高二','技高三','綜高一','綜高二','綜高三'].map(s=><option key={s} value={s}>{s}</option>)}</select><input type="text" value={formData.name} onChange={(e)=>setFormData({...formData, name:e.target.value})} className="w-full p-4 bg-slate-50 rounded-2xl border-2 font-bold outline-none" placeholder="科目名稱，如: 物理B" /><div className="flex justify-center gap-2">{THEME_COLORS.map(c=><button key={c.id} onClick={()=>setFormData({...formData, color:c.id})} className={`w-8 h-8 rounded-full ${c.base} ${formData.color===c.id?'ring-4 ring-slate-200':''}`}/>)}</div><button onClick={handleSave} className="w-full py-4 bg-indigo-600 text-white font-black rounded-2xl">確認新增</button></div>)}
                                     {modalType === 'addClass' && (<div className="space-y-4"><input type="text" value={formData.className} onChange={(e)=>setFormData({...formData, className:e.target.value})} className="w-full p-4 bg-slate-50 rounded-2xl border-2 font-bold text-center outline-none" placeholder="班級名稱，如: 電一智" /><button onClick={handleSave} className="w-full py-4 bg-indigo-600 text-white font-black rounded-2xl">確認新增</button></div>)}
                                     {modalType === 'confirmDelete' && (<div className="text-center space-y-6"><i className="ph-fill ph-warning-circle text-rose-500 text-6xl mx-auto animate-pulse"></i><h4 className="text-lg font-black">確定刪除「{deleteTarget?.name}」？</h4><button onClick={handleConfirmDelete} className="w-full py-4 bg-rose-500 text-white font-black rounded-2xl">我確定，刪除</button></div>)}
                                     {modalType === 'devicePairing' && (<div className="space-y-6"><div className="p-6 bg-indigo-50 rounded-[32px] text-center"><p className="text-[10px] font-black text-indigo-400 mb-2">本機同步金鑰</p><div className="flex justify-center gap-3"><span className="text-3xl font-black text-indigo-700 tracking-widest">{syncKey}</span></div></div><div className="flex gap-2"><input type="text" value={inputSyncKey} onChange={(e)=>setInputSyncKey(e.target.value.toUpperCase())} placeholder="PHY-XXXXX" className="flex-1 p-4 bg-slate-50 border-2 rounded-2xl font-black text-center tracking-widest uppercase outline-none" /><button onClick={() => { if(inputSyncKey.length > 3){ setSyncKey(inputSyncKey); setIsModalOpen(false); } }} className="px-6 bg-slate-800 text-white rounded-2xl font-black">連線</button></div></div>)}
-                                    {modalType === 'classJournal' && (<div className="space-y-4"><label className="block text-xs font-black text-slate-400 text-center">填寫 {editingCell?.date} 第{editingCell?.period}節 進度</label><input type="text" value={formData.logChapter} onChange={(e)=>setFormData({...formData, logChapter:e.target.value})} className="w-full p-4 bg-slate-50 rounded-2xl border-2 font-bold text-center outline-none" placeholder="章節名稱 (例如: 1-1 物理學)"/><input type="number" value={formData.logPage} onChange={(e)=>setFormData({...formData, logPage:e.target.value})} className="w-full p-4 bg-slate-50 rounded-2xl border-2 font-black text-center text-xl outline-none" placeholder="頁數"/><div className="flex gap-2 justify-center mt-4 border-t pt-4">{[{id:'quiz',l:'小考',i:'ph-pencil-simple'},{id:'lab',l:'實驗',i:'ph-flask'},{id:'study',l:'自修',i:'ph-book-open'}].map(evt=><button key={evt.id} onClick={()=>setFormData({...formData, logEvent:formData.logEvent===evt.id?null:evt.id})} className={`px-4 py-2 rounded-xl text-xs font-black border-2 ${formData.logEvent===evt.id?'bg-indigo-50 border-indigo-400 text-indigo-600':'bg-slate-50 border-slate-100 text-slate-500'}`}><i className={`ph-bold ${evt.i} mr-1`}></i>{evt.l}</button>)}</div><button onClick={handleSave} className="w-full py-4 bg-emerald-500 text-white font-black rounded-2xl shadow-xl flex justify-center gap-2 mt-4"><i className="ph-bold ph-check-circle text-xl"></i> 儲存進度</button></div>)}
                                     
-                                    {/* 💡 這裡顯示的按鈕和星期幾，邏輯上本身是對的 (1=一, 5=五)，問題出在顯示端的翻譯 */}
-                                    {modalType === 'editSchedule' && (<div className="space-y-4 overflow-x-auto"><div className="grid grid-cols-6 gap-1 min-w-[300px]"><div/>{['一','二','三','四','五'].map(d=><div key={d} className="text-center text-[10px] font-black text-slate-400">週{d}</div>)}{PERIODS.map(p=>(<Fragment key={p}><div className="flex items-center justify-center text-[10px] font-bold text-slate-400">第{p}節</div>{[1,2,3,4,5].map(dIdx=>{ const isSel = currentCourse?.classes.find(c=>c.id===editingClassId)?.schedule.some(s=>s.day===dIdx&&s.period===p); return <button key={`${dIdx}-${p}`} onClick={()=>toggleSchedule(dIdx, p)} className={`h-10 rounded-lg border-2 transition-all ${isSel?'bg-indigo-600 border-indigo-600 text-white':'bg-slate-50 border-slate-100 hover:bg-slate-100'}`}>{isSel?<i className="ph-bold ph-plus"></i>:null}</button> })}</Fragment>))}</div></div>)}
+                                    {/* 💡 尋回功能 1: 智慧化教學日誌選單 */}
+                                    {modalType === 'classJournal' && (
+                                        <div className="space-y-4">
+                                            <div className="bg-indigo-50/50 p-2 rounded-[24px] border border-indigo-100/50">
+                                                <label className="block text-[10px] font-black text-indigo-400 uppercase tracking-widest pt-1 text-center">目前的教學章節</label>
+                                                <select value={formData.logChapter} onChange={(e) => { const newChapter = e.target.value; setFormData({ ...formData, logChapter: newChapter, logPage: newChapter === '本次段考進度全數完成！' ? '-' : '1' }); }} className="w-full bg-transparent py-2 px-4 text-base font-black text-slate-700 outline-none cursor-pointer text-center appearance-none">
+                                                    {activeLogGroups.map(exKey => { 
+                                                        const chapters = currentCourse?.syllabus?.[exKey] || []; if (chapters.length === 0) return null; 
+                                                        const labelStr = exKey === 'exam1' ? '第一次段考' : exKey === 'exam2' ? '第二次段考' : '第三次段考'; 
+                                                        return (
+                                                            <optgroup key={exKey} label={labelStr} className="font-black text-slate-400 bg-slate-50">
+                                                                {chapters.map(ch => { const isFinished = formData.logFinishedChapters.includes(ch.title); return <option key={ch.title} value={ch.title} className="font-bold text-slate-800 bg-white">{ch.title} {isFinished ? '✅ (已完成)' : ''}</option>; })}
+                                                            </optgroup>
+                                                        ); 
+                                                    })}
+                                                    {formData.logChapter === '本次段考進度全數完成！' && <option value="本次段考進度全數完成！">🎉 本次段考進度全數完成！</option>}
+                                                </select>
+                                            </div>
+                                            
+                                            <div className="grid grid-cols-2 gap-4">
+                                                <div className="flex flex-col items-center">
+                                                    <label className="block text-[10px] font-black text-slate-400 uppercase tracking-widest mb-1.5">當前進度 (頁數)</label>
+                                                    <div className="relative w-full">
+                                                        <input type="number" min="1" max={currentChapterMaxPages || undefined} value={formData.logPage} onChange={(e) => { let val = e.target.value; let updatedFinishedChapters = [...formData.logFinishedChapters]; if (currentChapterMaxPages) { if (parseInt(val) > currentChapterMaxPages) val = currentChapterMaxPages.toString(); if (parseInt(val) < currentChapterMaxPages && updatedFinishedChapters.includes(formData.logChapter)) updatedFinishedChapters = updatedFinishedChapters.filter(ch => ch !== formData.logChapter); } else { if (updatedFinishedChapters.includes(formData.logChapter)) updatedFinishedChapters = updatedFinishedChapters.filter(ch => ch !== formData.logChapter); } setFormData({...formData, logPage: val, logFinishedChapters: updatedFinishedChapters}); }} className="w-full text-center px-4 py-3 bg-slate-50 border-2 border-slate-100 rounded-2xl font-black text-xl focus:border-indigo-500 outline-none" style={{ paddingRight: currentChapterMaxPages ? '3rem' : '1rem' }} placeholder="12" />
+                                                        {currentChapterMaxPages && (<span className="absolute right-4 top-1/2 -translate-y-1/2 text-[12px] font-black text-slate-300 pointer-events-none select-none">/ {currentChapterMaxPages}</span>)}
+                                                    </div>
+                                                </div>
+                                                <div className="flex flex-col justify-end">
+                                                    <button onClick={(e) => { e.preventDefault(); handleNextProgress(); }} className="w-full h-[52px] rounded-2xl font-black text-sm flex items-center justify-center gap-2 transition-all bg-emerald-50 text-emerald-600 hover:bg-emerald-500 hover:text-white border border-emerald-100 group"><i className="ph-bold ph-check-circle text-xl group-hover:scale-110 transition-transform"></i> 本章節完成</button>
+                                                </div>
+                                            </div>
+
+                                            <div className="flex gap-2 justify-center mt-4 border-t pt-4">
+                                                {[{id:'quiz',l:'小考',i:'ph-pencil-simple'},{id:'lab',l:'實驗',i:'ph-flask'},{id:'study',l:'自修',i:'ph-book-open'}].map(evt=><button key={evt.id} onClick={()=>setFormData({...formData, logEvent:formData.logEvent===evt.id?null:evt.id})} className={`px-4 py-2 rounded-xl text-xs font-black border-2 ${formData.logEvent===evt.id?'bg-indigo-50 border-indigo-400 text-indigo-600':'bg-slate-50 border-slate-100 text-slate-500'}`}><i className={`ph-bold ${evt.i} mr-1`}></i>{evt.l}</button>)}
+                                            </div>
+                                            {formData.logEvent && (<input type="text" value={formData.logEventText} onChange={(e) => setFormData({...formData, logEventText: e.target.value})} placeholder={formData.logEvent === 'quiz' ? '輸入考試範圍' : formData.logEvent === 'lab' ? '輸入實驗名稱' : '活動說明'} className="w-full px-4 py-2 bg-white border-2 border-indigo-100 rounded-xl text-sm font-bold text-slate-700 outline-none mt-2" />)}
+                                            <button onClick={handleSave} className="w-full py-4 bg-slate-900 text-white font-black rounded-2xl shadow-xl mt-4">儲存進度紀錄</button>
+                                        </div>
+                                    )}
+                                    
+                                    {/* 💡 尋回功能 3: 課表編輯器的衝堂偵測 */}
+                                    {modalType === 'editSchedule' && (<div className="space-y-4 overflow-x-auto"><div className="grid grid-cols-6 gap-1 min-w-[300px]"><div/>{['一','二','三','四','五'].map(d=><div key={d} className="text-center text-[10px] font-black text-slate-400">週{d}</div>)}{PERIODS.map(p=>(<Fragment key={p}><div className="flex items-center justify-center text-[10px] font-bold text-slate-400">第{p}節</div>{[1,2,3,4,5].map(dIdx=>{ const isSel = currentCourse?.classes.find(c=>c.id===editingClassId)?.schedule.some(s=>s.day===dIdx&&s.period===p); const conflictName = getConflictingClassName(dIdx, p); const hasConflict = isSel && conflictName; return <button key={`${dIdx}-${p}`} onClick={()=>toggleSchedule(dIdx, p)} className={`h-10 rounded-lg border-2 transition-all relative flex flex-col items-center justify-center ${isSel?'bg-indigo-600 border-indigo-600 text-white':hasConflict?'border-rose-400 ring-2 ring-rose-200 bg-rose-50':'bg-slate-50 border-slate-100 hover:bg-slate-100'}`}>{isSel?<i className="ph-bold ph-plus"></i>:conflictName?<span className="text-[8px] font-black opacity-60 text-rose-500 scale-90">{conflictName}</span>:null}</button> })}</Fragment>))}</div></div>)}
                                     
                                     {modalType === 'semesterSettings' && (<div className="space-y-6"><div className="bg-slate-50 p-4 rounded-2xl flex justify-between items-center"><span className="text-sm font-black text-slate-700">學期開學日</span><input type="date" value={formData.examData.startDate||''} onChange={(e)=>setFormData({...formData, examData:{...formData.examData, startDate:e.target.value}})} className="p-2 rounded-xl outline-none" /></div><div className="flex p-1 bg-slate-100 rounded-2xl">{[{id:'common',l:'通用'},{id:'v3',l:'技三'},{id:'s3',l:'綜三'}].map(t=><button key={t.id} onClick={()=>setActiveSettingTab(t.id)} className={`flex-1 py-2 text-xs font-black rounded-xl ${activeSettingTab===t.id?'bg-white text-indigo-600 shadow-sm':'text-slate-400'}`}>{t.l}</button>)}</div><div className="grid grid-cols-2 gap-4"><div className="space-y-2">{['exam1','exam2','exam3'].map(k=><button key={k} onClick={()=>setActiveExamKey(k)} className={`w-full p-4 rounded-2xl border-2 text-left text-xs font-black ${activeExamKey===k?'border-indigo-400 bg-indigo-50':'border-slate-100 bg-slate-50'}`}>{k==='exam1'?'段考一':k==='exam2'?'段考二':'段考三'} ({formData.examData[activeSettingTab][k]?.length||0}天)</button>)}</div><div className="bg-slate-50 rounded-2xl p-4">{activeExamKey?<div className="text-xs text-slate-500">已選取日期：<br/>{(formData.examData[activeSettingTab][activeExamKey]||[]).join(', ')||"無"} <br/><br/>(請輸入欲增加的日期 YYYY-MM-DD)<input type="text" onKeyDown={(e)=>{if(e.key==='Enter'){const d=e.target.value;const arr=formData.examData[activeSettingTab][activeExamKey]||[]; if(!arr.includes(d)){setFormData({...formData,examData:{...formData.examData,[activeSettingTab]:{...formData.examData[activeSettingTab],[activeExamKey]:[...arr,d]}}})};e.target.value='';}}} className="mt-2 w-full p-2 rounded outline-none border"/></div>:<div className="text-center text-slate-400 text-xs mt-10">請點選左側段考</div>}</div></div><button onClick={handleSave} className="w-full py-4 bg-indigo-600 text-white font-black rounded-2xl">儲存設定</button></div>)}
                                     {modalType === 'editSyllabus' && (<div className="space-y-4">{['exam1','exam2','exam3'].map(k=><div key={k} className="border-2 border-slate-100 rounded-2xl overflow-hidden"><button onClick={()=>setExpandedSyllabusTab(expandedSyllabusTab===k?null:k)} className="w-full p-4 bg-slate-50 font-black text-left flex justify-between">{k==='exam1'?'第一次段考範圍':k==='exam2'?'第二次段考範圍':'第三次段考範圍'} <i className="ph-bold ph-caret-down"></i></button>{expandedSyllabusTab===k && <div className="p-4 space-y-2">{(formData.syllabusData[k]||[]).map((ch,idx)=><div key={idx} className="flex gap-2"><input type="text" value={ch.title} onChange={(e)=>{const n={...formData.syllabusData};n[k][idx].title=e.target.value;setFormData({...formData,syllabusData:n})}} className="flex-1 p-2 border rounded-xl outline-none"/><button onClick={()=>{const n={...formData.syllabusData};n[k].splice(idx,1);setFormData({...formData,syllabusData:n})}} className="p-2 text-rose-400"><i className="ph-bold ph-trash"></i></button></div>)}<button onClick={()=>{const n={...formData.syllabusData};n[k].push({title:'新章節',pages:0});setFormData({...formData,syllabusData:n})}} className="w-full p-3 border-2 border-dashed rounded-xl text-slate-400 font-bold"><i className="ph-bold ph-plus"></i> 新增章節</button></div>}</div>)}<button onClick={handleSave} className="w-full py-4 bg-indigo-600 text-white font-black rounded-2xl mt-4">儲存課綱</button></div>)}
