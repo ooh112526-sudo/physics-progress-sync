@@ -53,7 +53,7 @@
 
     <script type="text/babel">
         const { useState, useEffect, useMemo, Fragment } = React;
-        const APP_VERSION = "v9.4.2 (週末背景濾鏡修復版)";
+        const APP_VERSION = "v9.4.3 (色彩引擎強制掛載版)";
 
         const THEME_COLORS = [
             { id: 'sky', name: '晴空水藍', h: 199, s: 89, base: 'bg-sky-400', light: 'bg-sky-50', text: 'text-sky-800' },
@@ -428,6 +428,9 @@
 
             return (
                 <div className="flex h-screen bg-slate-50 font-sans text-slate-900 overflow-hidden">
+                    {/* 🌟 核心保險機制：隱藏的色彩定錨點 (Tailwind Safelist) */}
+                    <div className="hidden bg-red-50 bg-blue-50 bg-red-100 bg-blue-100 text-red-500 text-blue-500 text-red-600 text-blue-600 border-red-100 border-blue-100 border-red-200 border-blue-200 hover:bg-red-50 hover:bg-blue-50 hover:bg-red-100 hover:bg-blue-100 bg-indigo-50 bg-indigo-100 border-indigo-200 text-indigo-600"></div>
+
                     {/* 側邊欄 */}
                     <div className={`fixed inset-y-0 left-0 z-30 w-64 bg-white border-r lg:static lg:translate-x-0 flex flex-col transition-transform ${isSidebarOpen ? 'translate-x-0' : '-translate-x-full'}`}>
                         <div className="flex items-center gap-3 h-16 px-6 border-b border-slate-100 shrink-0"><i className="ph-bold ph-calendar-check text-indigo-600 text-2xl"></i><span className="font-bold text-lg">進度同步儀</span><button onClick={() => setIsSidebarOpen(false)} className="lg:hidden ml-auto p-1"><i className="ph-bold ph-x text-xl text-slate-400"></i></button></div>
@@ -562,8 +565,8 @@
                                             <div className="flex-1 overflow-y-auto p-4 md:p-8 max-w-2xl mx-auto w-full">
                                                 <div className="text-center mb-8">
                                                     <h3 className="text-3xl font-black text-slate-800">
-                                                        {currentDate.getMonth() + 1}月<span className={currentDate.getDay() === 0 ? 'text-red-500' : currentDate.getDay() === 6 ? 'text-blue-500' : ''}>{currentDate.getDate()}</span>日 
-                                                        <span className={`ml-2 text-xl ${currentDate.getDay()===0?'text-red-500':currentDate.getDay()===6?'text-blue-500':'text-slate-400'}`}>週{WEEK_DAYS_DISPLAY[currentDate.getDay()]}</span>
+                                                        {currentDate.getMonth() + 1}月<span className={currentDate.getDay() === 0 ? 'text-red-600' : currentDate.getDay() === 6 ? 'text-blue-600' : ''}>{currentDate.getDate()}</span>日 
+                                                        <span className={`ml-2 text-xl ${currentDate.getDay()===0?'text-red-600':currentDate.getDay()===6?'text-blue-600':'text-slate-500'}`}>週{WEEK_DAYS_DISPLAY[currentDate.getDay()]}</span>
                                                     </h3>
                                                 </div>
                                                 
@@ -642,7 +645,6 @@
                                             <div className="min-w-[900px] overflow-auto flex-1">
                                                 <div className="grid border-b border-slate-100 bg-slate-50/50" style={{ gridTemplateColumns: '60px 2fr 2fr 2fr 2fr 2fr 1fr 1fr' }}>
                                                     <div className="p-4 flex items-center justify-center border-r"><i className="ph-bold ph-clock text-slate-400"></i></div>
-                                                    {/* 🌟 濾鏡加深：週視圖的標題列 (紅藍雙色與獨立底色) */}
                                                     {weekDays.map((d, i) => {
                                                         const dayIdx = d.getDay();
                                                         const dayColor = dayIdx === 0 ? 'text-red-600' : dayIdx === 6 ? 'text-blue-600' : 'text-slate-500';
@@ -661,14 +663,13 @@
                                                         <div className="border-r flex items-center justify-center text-[11px] font-black text-slate-400 bg-slate-50/30">第{p}節</div>
                                                         {weekDays.map((d, i) => {
                                                             const classes = getDayClasses(d).filter(c => c.period === p);
-                                                            // 🌟 濾鏡加深：週視圖的內容欄位獨立底色
                                                             const dayIdx = d.getDay();
                                                             const colBg = dayIdx === 0 ? 'bg-red-100' : dayIdx === 6 ? 'bg-blue-100' : 'hover:bg-slate-50';
                                                             return (
                                                                 <div key={i} className={`p-2 border-r min-h-[90px] relative transition-colors ${colBg}`}>
                                                                     {classes.map(cls => {
                                                                         const isBlocked = cls.isHoliday || cls.isExam;
-                                                                        let bgClass = 'bg-white border-sky-100 hover:shadow-md active:scale-95'; // 修正: 工作日卡片底色統一為白
+                                                                        let bgClass = 'bg-white border-sky-100 hover:shadow-md active:scale-95';
                                                                         let titleColor = cls.courseTheme.text;
                                                                         let descColor = 'text-slate-500';
                                                                         let descText = `${cls.logPrefix}${cls.logText}`;
@@ -695,7 +696,6 @@
                                         )}
                                         {calendarViewMode === 'month' && (
                                             <div className="p-8 flex-1 overflow-y-auto">
-                                                {/* 🌟 濾鏡加深：月視圖標題列 (紅藍雙色) */}
                                                 <div className="grid grid-cols-7 mb-4 border-b border-slate-50 pb-4">
                                                     {WEEK_DAYS_DISPLAY.map((d, index) => <div key={d} className={`text-center text-xs font-black py-2 ${index === 0 ? 'text-red-600' : index === 6 ? 'text-blue-600' : 'text-slate-500'}`}>週{d}</div>)}
                                                 </div>
@@ -706,7 +706,6 @@
                                                         for(let d=1;d<=dim;d++) {
                                                             const dateObj=new Date(y,m,d); const dk=formatDateKey(dateObj); const ho=getHoliday(dk); const isH=!!ho; const classes=getDayClasses(dateObj); const exams=getGlobalExams(dk, currentSemesterData.settings);
                                                             
-                                                            // 🌟 濾鏡加深：月曆格子的數字顏色與絕對獨立底色
                                                             const dayIdx = dateObj.getDay();
                                                             const numColor = isH ? 'text-rose-600' : dayIdx === 0 ? 'text-red-600' : dayIdx === 6 ? 'text-blue-600' : 'text-slate-600';
                                                             const cellBgClass = isH ? 'bg-rose-100 border-rose-200' : dayIdx === 0 ? 'bg-red-100 border-red-200 hover:bg-red-200' : dayIdx === 6 ? 'bg-blue-100 border-blue-200 hover:bg-blue-200' : 'bg-white hover:bg-slate-50 border-slate-100';
@@ -897,7 +896,6 @@
                                                                 <button onClick={() => setViewDate(new Date(viewDate.getFullYear(), viewDate.getMonth() + 1, 1))} className="p-1 hover:bg-white rounded-lg"><i className="ph-bold ph-caret-right"></i></button>
                                                             </div>
                                                             <div className="grid grid-cols-7 gap-1">
-                                                                {/* 🌟 濾鏡加深：設定視窗的微型月曆標題列 */}
                                                                 {WEEK_DAYS_DISPLAY.map((d, index) => <div key={d} className={`text-center text-[9px] font-black py-1 ${index === 0 ? 'text-red-600' : index === 6 ? 'text-blue-600' : 'text-slate-500'}`}>{d}</div>)}
                                                                 {(() => { 
                                                                     const { firstDay, days } = getDaysInMonth(viewDate); const grid = []; 
@@ -906,7 +904,6 @@
                                                                         const ds = `${viewDate.getFullYear()}-${(viewDate.getMonth()+1).toString().padStart(2,'0')}-${d.toString().padStart(2,'0')}`; 
                                                                         const sel = (formData.examData[activeSettingTab][activeExamKey] || []).includes(ds); 
                                                                         
-                                                                        // 🌟 濾鏡加深：設定視窗的微型月曆網格背景
                                                                         const currentDayIndex = new Date(viewDate.getFullYear(), viewDate.getMonth(), d).getDay();
                                                                         const defaultColor = currentDayIndex === 0 ? 'text-red-600 bg-red-100' : currentDayIndex === 6 ? 'text-blue-600 bg-blue-100' : 'text-slate-600 hover:bg-white';
 
