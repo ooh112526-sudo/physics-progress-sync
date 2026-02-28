@@ -1060,7 +1060,30 @@
                                                 {[{id:'quiz',l:'小考',i:'ph-pencil-simple'},{id:'lab',l:'實驗',i:'ph-flask'},{id:'study',l:'自修',i:'ph-book-open'},{id:'other',l:'其他',i:'ph-balloon'}].map(evt=><button key={evt.id} onClick={()=>setFormData({...formData, logEvent:formData.logEvent===evt.id?null:evt.id})} className={`flex-1 py-2 rounded-xl text-xs font-black border-2 ${formData.logEvent===evt.id?'bg-indigo-50 border-indigo-400 text-indigo-600':'bg-slate-50 border-slate-100 text-slate-500'}`}><i className={`ph-bold ${evt.i} mr-1`}></i>{evt.l}</button>)}
                                             </div>
                                             {formData.logEvent && (<input type="text" value={formData.logEventText} onChange={(e) => setFormData({...formData, logEventText: e.target.value})} placeholder={formData.logEvent === 'quiz' ? '輸入考試範圍' : formData.logEvent === 'lab' ? '輸入實驗名稱' : '活動說明'} className="w-full px-4 py-3 bg-white border-2 border-indigo-100 rounded-xl text-sm font-bold text-slate-700 outline-none mt-2 shadow-sm" />)}
-                                            <button onClick={handleSave} className="w-full py-4 bg-slate-900 text-white font-black rounded-2xl shadow-xl mt-4">儲存進度紀錄</button>
+                                            
+                                            {/* 🌟 新增：智慧判斷並顯示刪除按鈕 */}
+                                            {(() => {
+                                                const clsForLog = currentCourse?.classes.find(cl => cl.id === editingCell?.classId);
+                                                const hasExistingLog = clsForLog?.logs.some(l => l.date === editingCell?.date && l.period === editingCell?.period);
+                                                return (
+                                                    <div className="flex gap-3 mt-4">
+                                                        {hasExistingLog && (
+                                                            <button onClick={() => {
+                                                                const newData = { ...data };
+                                                                const semester = newData[selectedYear][selectedSemester];
+                                                                const cls = semester.courses.find(c => c.classes.some(cl => cl.id === editingCell.classId)).classes.find(cl => cl.id === editingCell.classId);
+                                                                // 執行陣列過濾，精準剃除該日該節的紀錄
+                                                                cls.logs = cls.logs.filter(l => !(l.date === editingCell.date && l.period === editingCell.period));
+                                                                setData(newData);
+                                                                setIsModalOpen(false);
+                                                            }} className="w-1/3 py-4 bg-rose-50 border-2 border-rose-100 text-rose-500 font-black rounded-2xl hover:bg-rose-500 hover:text-white transition-all flex items-center justify-center gap-1">
+                                                                <i className="ph-bold ph-trash text-lg"></i> <span className="hidden sm:inline">刪除</span>
+                                                            </button>
+                                                        )}
+                                                        <button onClick={handleSave} className="flex-1 py-4 bg-slate-900 text-white font-black rounded-2xl shadow-xl">儲存進度紀錄</button>
+                                                    </div>
+                                                );
+                                            })()}
                                         </div>
                                     )}
                                     
