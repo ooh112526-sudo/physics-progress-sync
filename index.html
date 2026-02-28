@@ -53,7 +53,7 @@
 
     <script type="text/babel">
         const { useState, useEffect, useMemo, Fragment } = React;
-        const APP_VERSION = "v9.3.0 (開機直達當日課表版)";
+        const APP_VERSION = "v9.3.2 (月曆排版精確校準版)";
 
         const THEME_COLORS = [
             { id: 'sky', name: '晴空水藍', h: 199, s: 89, base: 'bg-sky-400', light: 'bg-sky-50', text: 'text-sky-800' },
@@ -65,10 +65,12 @@
             { id: 'amber', name: '奶油暖黃', h: 45, s: 93, base: 'bg-amber-400', light: 'bg-amber-50', text: 'text-amber-800' }
         ];
 
+        // 系統共用刻度尺 (從星期日開始)
         const WEEK_DAYS_DISPLAY = ['日', '一', '二', '三', '四', '五', '六'];
         const PERIODS = [1, 2, 3, 4, 5, 6, 7, 8];
         const DEFAULT_SYLLABUS = { exam1: [{ title: "1-1 物理學的發展", pages: 0 }, { title: "1-2 物理量單位", pages: 0 }], exam2: [{ title: "2-1 速度", pages: 0 }, { title: "2-2 加速度", pages: 0 }], exam3: [{ title: "3-1 牛頓定律", pages: 0 }] };
         
+        // 乾淨的初始狀態
         const initialData = {
             "114": {
                 "下學期": {
@@ -132,7 +134,7 @@
             const [isModalOpen, setIsModalOpen] = useState(false);
             const [modalType, setModalType] = useState(''); 
             
-            // 🌟 關鍵修改：開機通電時，直接預設將主畫面切換到「行事曆 (calendar)」，模式為「日 (day)」
+            // 預設直接切換到「行事曆 (calendar)」的「日 (day)」模式
             const [activeMainView, setActiveMainView] = useState('calendar');
             const [calendarViewMode, setCalendarViewMode] = useState('day'); 
             
@@ -384,7 +386,15 @@
             const toggleSchedule = (dayIndex, period) => { const newData = { ...data }; const cls = newData[selectedYear][selectedSemester].courses.find(c => c.id === selectedCourseId)?.classes.find(c => c.id === editingClassId); if (cls) { const exists = cls.schedule.find(s => s.day === dayIndex && s.period === period); if (exists) cls.schedule = cls.schedule.filter(s => !(s.day === dayIndex && s.period === period)); else cls.schedule.push({ day: dayIndex, period }); setData(newData); } };
             const getConflictingClassName = (day, period) => { for (const course of currentCourses) { for (const cls of course.classes) { if (cls.id === editingClassId) continue; if (cls.schedule?.some(s => s.day === day && s.period === period)) return cls.name; } } return null; };
             const handleNextProgress = () => { if(!currentCourse || !currentCourse.syllabus) return; const currentCh = formData.logChapter; const newFinished = formData.logFinishedChapters.includes(currentCh) ? formData.logFinishedChapters : [...formData.logFinishedChapters, currentCh]; let targetPage = formData.logPage; const allChapters = [...(currentCourse.syllabus.exam1 || []), ...(currentCourse.syllabus.exam2 || []), ...(currentCourse.syllabus.exam3 || [])]; const currentChData = allChapters.find(ch => ch.title === currentCh); if (currentChData && currentChData.pages > 0) targetPage = currentChData.pages.toString(); setFormData({ ...formData, logFinishedChapters: newFinished, logPage: targetPage }); };
-            const getDaysInMonth = (date) => { const d = new Date(date.getFullYear(), date.getMonth() + 1, 0); const firstDay = new Date(date.getFullYear(), date.getMonth(), 1).getDay(); return { firstDay: firstDay === 0 ? 6 : firstDay - 1, days: d.getDate() }; };
+            
+            // 🌟 月曆精確校準引擎：捨棄舊的位移演算法，直接對齊 new Date().getDay()
+            const getDaysInMonth = (date) => { 
+                const d = new Date(date.getFullYear(), date.getMonth() + 1, 0); 
+                const firstDay = new Date(date.getFullYear(), date.getMonth(), 1).getDay(); 
+                // 直接回傳 firstDay，因為我們的 WEEK_DAYS_DISPLAY 已經是從 0(星期日) 開始了
+                return { firstDay: firstDay, days: d.getDate() }; 
+            };
+            
             const toggleDateInExam = (dateStr) => { const newExamData = { ...formData.examData }; if (!newExamData[activeSettingTab]) newExamData[activeSettingTab] = {}; const dates = newExamData[activeSettingTab][activeExamKey] || []; if (dates.includes(dateStr)) newExamData[activeSettingTab][activeExamKey] = dates.filter(d => d !== dateStr); else newExamData[activeSettingTab][activeExamKey] = [...dates, dateStr].sort(); setFormData({ ...formData, examData: newExamData }); };
             const moveSyllabus = (exam, index, direction) => { const newSyllabus = { ...formData.syllabusData }; const arr = newSyllabus[exam]; if (direction === -1 && index > 0) [arr[index], arr[index-1]] = [arr[index-1], arr[index]]; else if (direction === 1 && index < arr.length - 1) [arr[index], arr[index+1]] = [arr[index+1], arr[index]]; setFormData({ ...formData, syllabusData: newSyllabus }); };
 
@@ -873,6 +883,7 @@
                                                             <div className="grid grid-cols-7 gap-1">
                                                                 {WEEK_DAYS_DISPLAY.map(d => <div key={d} className="text-center text-[9px] font-black text-slate-400 py-1">{d}</div>)}
                                                                 {(() => { 
+                                                                    // 🌟 物理校準：月曆的排版偏移量直接對應星期的 index (0~6)
                                                                     const { firstDay, days } = getDaysInMonth(viewDate); const grid = []; 
                                                                     for(let i=0; i<firstDay; i++) grid.push(<div key={`e-${i}`} />); 
                                                                     for(let d=1; d<=days; d++) { 
