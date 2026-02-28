@@ -53,7 +53,7 @@
 
     <script type="text/babel">
         const { useState, useEffect, useMemo, Fragment } = React;
-        const APP_VERSION = "v9.5.0 (跨裝置 RWD 響應式優化版)";
+        const APP_VERSION = "v9.5.1 (跨裝置連線煞車修復版)";
 
         const THEME_COLORS = [
             { id: 'sky', name: '晴空水藍', h: 199, s: 89, base: 'bg-sky-400', light: 'bg-sky-50', text: 'text-sky-800' },
@@ -81,6 +81,7 @@
         function App() {
             const [isFirebaseReady, setIsFirebaseReady] = useState(window.firebaseReady || false);
             const [user, setUser] = useState(null);
+            // 控制上傳引擎的關鍵開關
             const [isCloudLoaded, setIsCloudLoaded] = useState(false);
             const [syncKey, setSyncKey] = useState(() => localStorage.getItem('physics_sync_key') || ('PHY-' + Math.random().toString(36).substring(2, 7).toUpperCase()));
             useEffect(() => localStorage.setItem('physics_sync_key', syncKey), [syncKey]);
@@ -110,6 +111,8 @@
 
             useEffect(() => { const h = () => setIsFirebaseReady(true); window.addEventListener('firebaseReady', h); return () => window.removeEventListener('firebaseReady', h); }, []);
             useEffect(() => { if (!isFirebaseReady || !window.firebase) return; window.firebase.signInAnonymously(window.firebase.auth).catch(e=>console.error(e)); const unsub = window.firebase.onAuthStateChanged(window.firebase.auth, setUser); return () => unsub(); }, [isFirebaseReady]);
+            
+            // 📥 下載引擎
             useEffect(() => {
                 if (!user || !syncKey || !isFirebaseReady || !window.firebase) return; 
                 const docRef = window.firebase.doc(window.firebase.db, 'artifacts', window.firebase.currentAppId, 'public', 'data', 'shared_progress', syncKey);
@@ -117,13 +120,17 @@
                     (docSnap) => {
                         if (docSnap.exists() && docSnap.data().appData) setData(prev => JSON.stringify(prev) === JSON.stringify(docSnap.data().appData) ? prev : docSnap.data().appData);
                         else window.firebase.setDoc(docRef, { appData: data }, { merge: true }).catch(()=>{});
+                        // 下載完成，鬆開上傳引擎的煞車
                         setIsCloudLoaded(true);
                     },
                     (err) => { console.error(err); setIsCloudLoaded(false); }
                 );
                 return () => unsub();
             }, [user, syncKey, isFirebaseReady]); 
+            
+            // 📤 上傳引擎
             useEffect(() => {
+                // 🚨 如果煞車 (isCloudLoaded=false) 被踩下，絕對不准執行上傳！
                 if (!user || !isCloudLoaded || !syncKey || !window.firebase) return;
                 window.firebase.setDoc(window.firebase.doc(window.firebase.db, 'artifacts', window.firebase.currentAppId, 'public', 'data', 'shared_progress', syncKey), { appData: data }, { merge: true }).catch(e=>console.error(e));
             }, [data, user, isCloudLoaded, syncKey]);
@@ -145,7 +152,6 @@
             const [activeExamKey, setActiveExamKey] = useState(null);
             const [activeSettingTab, setActiveSettingTab] = useState('common');
             
-            // 🌟 擴充 formData 狀態：新增 courseId 與 classId 來記憶「目前正在編輯誰」
             const [formData, setFormData] = useState({ system: '技高一', name: '', color: 'sky', className: '', year: '114', semester: '下學期', importSource: 'none', logPage: '', logChapter: '', logFinishedChapters: [], logEvent: null, logEventText: '', holidayDate: '', holidayDesc: '', examData: { startDate: '', common: {}, v3: {}, s3: {} }, syllabusData: { exam1: [], exam2: [], exam3: [] }, courseId: null, classId: null });
 
             const currentSemesterData = data[selectedYear]?.[selectedSemester] || { settings: { startDate: '', common: {}, v3: {}, s3: {}, holidays: [] }, courses: [] };
@@ -197,7 +203,6 @@
                 return `${selectedYear}/${parts[1]}/${dateArr.map(d => d.split('-')[2]).join('、')}`;
             };
 
-            // 🌟 核心修復 1：強制在地化時區解析引擎，奪回被 UTC 吃掉的開學第一天
             const parseDateLocal = (dateStr) => {
                 if (!dateStr) return new Date();
                 const [y, m, d] = dateStr.split('-');
@@ -210,7 +215,6 @@
                 const realToday = new Date(); 
                 realToday.setHours(0,0,0,0);
                 
-                // 改用在地化時區解析
                 const startDate = parseDateLocal(currentSemesterData.settings.startDate);
                 let snapshotDate = new Date(realToday);
                 
@@ -225,21 +229,18 @@
                 
                 snapshotDate.setHours(0,0,0,0);
                 const snapshotStr = formatDateKey(snapshotDate);
-                const realTodayStr = formatDateKey(realToday); // 🌟 新增：取得今日的字串格式用於比對段考
-                
-                // 🌟 新增：將底層的快照結算日轉換為 UI 顯示字串 (例如 "2/25")
+                const realTodayStr = formatDateKey(realToday);
                 const snapshotDisplay = `${snapshotDate.getMonth() + 1}/${snapshotDate.getDate()}`;
 
                 let maxPeriods = 0; const classPeriods = {}; const result = {}; let globalDaysToExam = 999; 
 
                 currentCourse.classes.forEach(cls => {
-                    let remainingPeriods = 0; // 這是給引擎用的「快照剩餘」
-                    let totalPeriods = 0;     // 總節數
-                    let taughtPeriods = 0;    // 🌟 新增變數：記錄真實已經上完、有填日誌的節數
+                    let remainingPeriods = 0; 
+                    let totalPeriods = 0;     
+                    let taughtPeriods = 0;    
                     let track = (currentCourse.system === '技高三' ? 'v3' : (currentCourse.system === '綜高三' ? 's3' : 'common'));
                     const trackData = currentSemesterData.settings[track] || {};
                     
-                    // 🌟 邏輯：判斷當前真實時間屬於哪次段考區間
                     let examLabel = '期末';
                     const e1 = trackData.exam1?.length ? [...trackData.exam1].sort().pop() : null;
                     const e2 = trackData.exam2?.length ? [...trackData.exam2].sort().pop() : null;
@@ -254,7 +255,6 @@
                     let nextExamDateStr = null;
                     let lastExamDateStr = null;
                     
-                    // 找出「下一次段考」與「上一次段考」的時間邊界
                     for (const d of allExamDates) { 
                         if (d >= snapshotStr) { 
                             if (!nextExamDateStr) nextExamDateStr = d; 
@@ -277,7 +277,6 @@
                         const pStart = parseDateLocal(periodStartStr);
                         const pEnd = parseDateLocal(nextExamDateStr);
                         
-                        // 模擬該段考區間的每一天，算出總排課節數
                         for (let d = new Date(pStart); d < pEnd; d.setDate(d.getDate() + 1)) {
                             const dStr = formatDateKey(d); 
                             const dayOfWeek = d.getDay();
@@ -286,14 +285,12 @@
                             const scheds = cls.schedule?.filter(s => s.day === dayOfWeek) || [];
                             totalPeriods += scheds.length;
 
-                            // 🌟 真實消耗計算：只要該節次有日誌紀錄，就代表真實消耗了 1 節
                             scheds.forEach(s => {
                                 const existingLog = cls.logs?.find(l => l.date === dStr && l.period === s.period);
                                 if (existingLog) taughtPeriods++;
                             });
                         }
 
-                        // 計算「快照剩餘 n 節」 (維持原本邏輯，確保紅黃綠燈比較基礎公平)
                         const endDate = parseDateLocal(nextExamDateStr);
                         globalDaysToExam = Math.ceil((endDate - realToday) / (1000 * 60 * 60 * 24));
                         for (let d = new Date(snapshotDate); d < endDate; d.setDate(d.getDate() + 1)) {
@@ -304,12 +301,11 @@
                         }
                     }
                     
-                    // 🌟 雙軌儲存：同時記錄「給引擎看的快照」與「給老師看的真實剩餘」
                     classPeriods[cls.id] = { 
                         snapshotRemaining: remainingPeriods, 
                         realRemaining: totalPeriods - taughtPeriods,
                         total: totalPeriods,
-                        examLabel: examLabel // 🌟 存入段考標籤
+                        examLabel: examLabel 
                     }; 
                     if (remainingPeriods > maxPeriods) maxPeriods = remainingPeriods;
                 });
@@ -318,9 +314,8 @@
                     const snapshotPeriods = classPeriods[cls.id]?.snapshotRemaining || 0; 
                     const realPeriods = classPeriods[cls.id]?.realRemaining || 0;
                     const totalPeriods = classPeriods[cls.id]?.total || 0;
-                    const examLabel = classPeriods[cls.id]?.examLabel || '本段考'; // 🌟 取出段考標籤
+                    const examLabel = classPeriods[cls.id]?.examLabel || '本段考';
                     
-                    // 🌟 燈號警示系統：嚴格使用「快照基準(snapshotPeriods)」相減，避免非同步假警報
                     const delta = maxPeriods - snapshotPeriods;
                     let status = 'green', colorClass = 'bg-emerald-400', textClass = 'text-emerald-500', barBgClass = 'bg-emerald-50 text-emerald-600 border border-emerald-200', msg = '進度完美同步';
                     if (delta >= 3) {
@@ -332,8 +327,7 @@
                     
                     const percentage = maxPeriods > 0 ? (snapshotPeriods / maxPeriods) * 100 : 0;
                     
-                    // 🌟 輸出給畫面：將 snapshotDisplay 一起打包送出
-                    result[cls.id] = { periods: realPeriods, totalPeriods, delta, status, colorClass, textClass, barBgClass, msg, percentage: maxPeriods > 0 ? (snapshotPeriods / maxPeriods) * 100 : 0, daysToExam: globalDaysToExam, snapshotDisplay, examLabel };
+                    result[cls.id] = { periods: realPeriods, totalPeriods, delta, status, colorClass, textClass, barBgClass, msg, percentage, daysToExam: globalDaysToExam, snapshotDisplay, examLabel };
                 });
                 return result;
             }, [currentCourse, currentSemesterData.settings]); 
@@ -417,7 +411,6 @@
                 else if (type === 'editSchedule') { setEditingClassId(extra); }
                 else if (type === 'semesterSettings') { setFormData({ ...formData, examData: JSON.parse(JSON.stringify(currentSemesterData.settings)) }); setActiveSettingTab('common'); setActiveExamKey(null); setViewDate(new Date(currentDate)); }
                 else if (type === 'editSyllabus') { 
-                    // 🌟 核心技巧 1：偷偷貼上「出廠標籤(originalTitle)」，用來追蹤誰被改了名字
                     const currentSyllabus = JSON.parse(JSON.stringify(currentCourses.find(c => c.id === extra).syllabus || DEFAULT_SYLLABUS));
                     ['exam1', 'exam2', 'exam3'].forEach(k => {
                         currentSyllabus[k].forEach(ch => ch.originalTitle = ch.title);
@@ -461,14 +454,12 @@
                     if (existingIdx >= 0) cls.logs[existingIdx] = logEntry; else cls.logs.push(logEntry); 
                 }
                 else if (modalType === 'addCourse') { if (!formData.name) return; const newId = `c-${Date.now()}`; semester.courses.push({ id: newId, system: formData.system, name: formData.name, themeId: formData.color, syllabus: JSON.parse(JSON.stringify(DEFAULT_SYLLABUS)), classes: [] }); setSelectedCourseId(newId); }
-                // 🌟 新增：儲存編輯後的課程資訊
                 else if (modalType === 'editCourse') { 
                     if (!formData.name) return; 
                     const targetCourse = semester.courses.find(c => c.id === formData.courseId);
                     if (targetCourse) { targetCourse.name = formData.name; targetCourse.system = formData.system; targetCourse.themeId = formData.color; }
                 }
                 else if (modalType === 'addClass') { if (!formData.className) return; semester.courses.find(c => c.id === selectedCourseId).classes.push({ id: `cl-${Date.now()}`, name: formData.className, schedule: [], logs: [], finishedChapters: [] }); }
-                // 🌟 新增：儲存編輯後的班級資訊
                 else if (modalType === 'editClass') {
                     if (!formData.className) return;
                     const targetCourse = semester.courses.find(c => c.id === formData.courseId);
@@ -485,31 +476,25 @@
                 }
                 else if (modalType === 'semesterSettings') { semester.settings = { ...semester.settings, ...formData.examData }; }
                 else if (modalType === 'editSyllabus') { 
-                    // 🌟 核心技巧 2：級聯更新引擎 (Cascading Update)
                     const targetCourse = semester.courses.find(c => c.id === selectedCourseId);
-                    const nameChanges = {}; // 建立 { "舊名字": "新名字" } 的對照表
+                    const nameChanges = {};
 
-                    // 整理對照表並清除隱形標籤
                     ['exam1', 'exam2', 'exam3'].forEach(k => {
                         formData.syllabusData[k].forEach(ch => {
                             if (ch.originalTitle && ch.originalTitle !== ch.title) {
                                 nameChanges[ch.originalTitle] = ch.title;
                             }
-                            delete ch.originalTitle; // 存入大腦前把追蹤標籤撕掉，保持資料純淨
+                            delete ch.originalTitle; 
                         });
                     });
 
-                    // 儲存最新的課綱
                     targetCourse.syllabus = JSON.parse(JSON.stringify(formData.syllabusData)); 
 
-                    // 執行全域巡視：如果有名稱改變，自動修正所有班級的舊日誌
                     if (Object.keys(nameChanges).length > 0) {
                         targetCourse.classes.forEach(cls => {
-                            // 修正日誌裡的章節名稱
                             cls.logs.forEach(log => {
                                 if (nameChanges[log.chapter]) log.chapter = nameChanges[log.chapter];
                             });
-                            // 修正「已完成」名單裡的章節名稱
                             cls.finishedChapters = cls.finishedChapters.map(ch => nameChanges[ch] || ch);
                         });
                     }
@@ -587,7 +572,6 @@
                                             <button onClick={() => setSelectedCourseId(c.id)} className="flex-1 flex items-center gap-3 text-left overflow-hidden"><div className={`w-2 h-2 rounded-full shrink-0 ${THEME_COLORS.find(t=>t.id===c.themeId).base}`}></div><span className={`font-bold text-sm truncate ${selectedCourseId===c.id?'text-indigo-700':'text-slate-600'}`}>{c.name}</span></button>
                                             <div className="flex">
                                                 <button onClick={(e) => { e.stopPropagation(); openModal('editSyllabus', c.id); }} className="p-1.5 text-slate-300 hover:text-indigo-600"><i className="ph-bold ph-list-checks text-base"></i></button>
-                                                {/* 🌟 減法設計：移除了原有的垃圾桶，只保留編輯鉛筆 */}
                                                 <button onClick={(e) => { e.stopPropagation(); openModal('editCourse', c); }} className="p-1.5 text-slate-300 hover:text-indigo-600"><i className="ph-bold ph-pencil-simple text-base"></i></button>
                                             </div>
                                         </div>
@@ -595,7 +579,6 @@
                                             <div className="pl-8 space-y-1 pb-2 mt-1">
                                                 {c.classes.map(cls => (
                                                     <div key={cls.id} className="flex justify-between items-center group"><span className="text-xs font-medium text-slate-400">{cls.name}</span><div className="opacity-0 group-hover:opacity-100 flex"><button onClick={() => openModal('editSchedule', cls.id)} className="p-1 text-slate-300 hover:text-indigo-600"><i className="ph-bold ph-clock text-xs"></i></button>
-                                                    {/* 🌟 減法設計：移除了班級原有的垃圾桶，只保留編輯鉛筆 */}
                                                     <button onClick={() => openModal('editClass', { courseId: c.id, cls: cls })} className="p-1 text-slate-300 hover:text-indigo-600"><i className="ph-bold ph-pencil-simple text-xs"></i></button>
                                                     </div></div>
                                                 ))}
@@ -616,7 +599,7 @@
                     {/* 主畫面 */}
                     <div className="flex-1 flex flex-col h-screen overflow-hidden">
                         
-                        {/* 🌟 核心修復 1：RWD 頂部導航列防擠壓 */}
+                        {/* RWD 頂部導航列防擠壓 */}
                         <div className="w-full bg-white border-b px-3 md:px-8 z-20 min-h-[5rem] py-2 md:py-0 md:h-20 flex flex-col md:flex-row items-center justify-between shrink-0 gap-2 md:gap-0">
                             
                             {/* 左側群組：選單、今天、儀表板/行事曆 */}
@@ -693,7 +676,6 @@
 
                                             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
                                                 {currentCourse.classes?.map(cls => {
-                                                    // 🌟 預設值加入 examLabel 防呆
                                                     const health = healthData[cls.id] || { periods: '?', totalPeriods: '?', colorClass: 'bg-slate-200', textClass: 'text-slate-900', barBgClass: 'bg-slate-100 text-slate-500', percentage: 0, msg: '尚未結算', snapshotDisplay: '?', examLabel: '本段考' };
                                                     return (
                                                     <div key={cls.id} className="bg-white p-6 rounded-[32px] border border-slate-100 shadow-sm hover:shadow-md transition-all group">
@@ -708,9 +690,7 @@
                                                             <div className="flex-1">
                                                                 <div className="flex justify-between items-center mb-2">
                                                                     <div className="flex items-center gap-2">
-                                                                        {/* 🌟 根據時間動態渲染「一段/二段/三段區間」 */}
                                                                         <span className="text-slate-400 font-black text-[14px] uppercase tracking-widest">{health.examLabel}區間</span>
-                                                                        {/* 🌟 UI 更新：在燈號標籤內，加入「至 X/X 前」的結算日提示 */}
                                                                         <div className={`flex items-center text-[10px] font-bold px-2 py-0.5 rounded-full ${health.barBgClass}`}>
                                                                             <span>{health.msg}</span>
                                                                             <span className="ml-1 pl-1 border-l border-current opacity-75 tracking-wider">至 {health.snapshotDisplay} 前</span>
@@ -821,7 +801,7 @@
                                         )}
 
                                         {calendarViewMode === 'week' && (
-                                            /* 🌟 核心修復 2：外層加上 overflow-auto，讓內部 900px 的課表可以左右滑動 */
+                                            /* 外層加上 overflow-auto，讓內部 900px 的課表可以左右滑動 */
                                             <div className="flex-1 overflow-auto w-full relative bg-slate-50/20">
                                                 <div className="min-w-[900px] flex flex-col h-full">
                                                     <div className="grid border-b border-slate-100 bg-slate-50/50 shrink-0" style={{ gridTemplateColumns: '60px 2fr 2fr 2fr 2fr 2fr 1fr 1fr' }}>
@@ -933,7 +913,6 @@
                     {isModalOpen && (
                         <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-md z-50 flex items-center justify-center p-4">
                             <div className={`bg-white rounded-[48px] shadow-2xl w-full ${modalType==='semesterSettings'||modalType==='editSyllabus'?'max-w-4xl':'max-w-md'} overflow-hidden animate-in flex flex-col max-h-[90vh]`}>
-                                {/* 🌟 根據是 add 還是 edit 動態更換標題 */}
                                 <div className="px-8 py-6 bg-slate-50 border-b flex items-center justify-between shrink-0"><h3 className="font-black text-slate-800 uppercase">{modalType==='addCourse'?'新增課程':modalType==='editCourse'?'編輯課程':modalType==='addClass'?'新增班級':modalType==='editClass'?'編輯班級名稱':modalType==='editSchedule'?'設定課表':modalType==='classJournal'?'教學日誌':modalType==='devicePairing'?'跨裝置同步':modalType==='semesterSettings'?'行事曆分流設定':modalType==='editSyllabus'?'編輯課綱':modalType==='switchSemester'?'切換學期':modalType==='backupRestore'?'資料備份與還原':'系統訊息'}</h3><button onClick={()=>setIsModalOpen(false)}><i className="ph-bold ph-x text-xl text-slate-400"></i></button></div>
                                 <div className="p-8 overflow-y-auto">
                                     
@@ -954,7 +933,6 @@
                                         </div>
                                     )}
 
-                                    {/* 🌟 動作收納：將刪除課程的按鈕移入編輯視窗內 */}
                                     {(modalType === 'addCourse' || modalType === 'editCourse') && (
                                         <div className="space-y-4">
                                             <select value={formData.system} onChange={(e)=>setFormData({...formData, system:e.target.value})} className="w-full p-4 bg-slate-50 rounded-2xl border-2 font-bold outline-none">{['技高一','技高二','技高三','綜高一','綜高二','綜高三'].map(s=><option key={s} value={s}>{s}</option>)}</select>
@@ -962,7 +940,6 @@
                                             <div className="flex justify-center gap-2">{THEME_COLORS.map(c=><button key={c.id} onClick={()=>setFormData({...formData, color:c.id})} className={`w-8 h-8 rounded-full ${c.base} ${formData.color===c.id?'ring-4 ring-slate-200':''}`}/>)}</div>
                                             <button onClick={handleSave} className="w-full py-4 bg-indigo-600 text-white font-black rounded-2xl">{modalType === 'editCourse' ? '儲存修改' : '確認新增'}</button>
                                             
-                                            {/* 🌟 狀態機跳轉：按下刪除直接跳換至確認警告視窗 */}
                                             {modalType === 'editCourse' && (
                                                 <button onClick={() => openModal('confirmDelete', { type: 'course', id: formData.courseId, name: formData.name })} className="w-full py-4 bg-rose-50 border-2 border-rose-100 text-rose-500 font-black rounded-2xl hover:bg-rose-500 hover:text-white transition-all flex items-center justify-center gap-2">
                                                     <i className="ph-bold ph-trash"></i> 刪除此課程
@@ -971,13 +948,11 @@
                                         </div>
                                     )}
                                     
-                                    {/* 🌟 動作收納：將刪除班級的按鈕移入編輯視窗內 */}
                                     {(modalType === 'addClass' || modalType === 'editClass') && (
                                         <div className="space-y-4">
                                             <input type="text" value={formData.className} onChange={(e)=>setFormData({...formData, className:e.target.value})} className="w-full p-4 bg-slate-50 rounded-2xl border-2 font-bold text-center outline-none" placeholder="班級名稱，如: 電一智" />
                                             <button onClick={handleSave} className="w-full py-4 bg-indigo-600 text-white font-black rounded-2xl">{modalType === 'editClass' ? '儲存修改' : '確認新增'}</button>
                                             
-                                            {/* 🌟 狀態機跳轉：按下刪除直接跳換至確認警告視窗 */}
                                             {modalType === 'editClass' && (
                                                 <button onClick={() => openModal('confirmDelete', { type: 'class', id: formData.classId, courseId: formData.courseId, name: formData.className })} className="w-full py-4 bg-rose-50 border-2 border-rose-100 text-rose-500 font-black rounded-2xl hover:bg-rose-500 hover:text-white transition-all flex items-center justify-center gap-2">
                                                     <i className="ph-bold ph-trash"></i> 刪除此班級
@@ -1021,7 +996,17 @@
                                                     )}
                                                 </div>
                                             </div>
-                                            <div className="flex gap-2"><input type="text" value={inputSyncKey} onChange={(e)=>setInputSyncKey(e.target.value.toUpperCase())} placeholder="PHY-XXXXX" className="flex-1 p-4 bg-slate-50 border-2 rounded-2xl font-black text-center tracking-widest uppercase outline-none" /><button onClick={() => { if(inputSyncKey.length > 3){ setSyncKey(inputSyncKey); setIsModalOpen(false); } }} className="px-6 bg-slate-800 text-white rounded-2xl font-black">連線</button></div>
+                                            <div className="flex gap-2">
+                                                <input type="text" value={inputSyncKey} onChange={(e)=>setInputSyncKey(e.target.value.toUpperCase())} placeholder="PHY-XXXXX" className="flex-1 p-4 bg-slate-50 border-2 rounded-2xl font-black text-center tracking-widest uppercase outline-none" />
+                                                <button onClick={() => { 
+                                                    if(inputSyncKey.length > 3){ 
+                                                        // 🚨 關鍵煞車：強迫切斷上傳引擎，等待新保險箱的資料下載完成
+                                                        setIsCloudLoaded(false); 
+                                                        setSyncKey(inputSyncKey); 
+                                                        setIsModalOpen(false); 
+                                                    } 
+                                                }} className="px-6 bg-slate-800 text-white rounded-2xl font-black">連線</button>
+                                            </div>
                                         </div>
                                     )}
                                     
@@ -1061,7 +1046,6 @@
                                             </div>
                                             {formData.logEvent && (<input type="text" value={formData.logEventText} onChange={(e) => setFormData({...formData, logEventText: e.target.value})} placeholder={formData.logEvent === 'quiz' ? '輸入考試範圍' : formData.logEvent === 'lab' ? '輸入實驗名稱' : '活動說明'} className="w-full px-4 py-3 bg-white border-2 border-indigo-100 rounded-xl text-sm font-bold text-slate-700 outline-none mt-2 shadow-sm" />)}
                                             
-                                            {/* 🌟 新增：智慧判斷並顯示刪除按鈕 */}
                                             {(() => {
                                                 const clsForLog = currentCourse?.classes.find(cl => cl.id === editingCell?.classId);
                                                 const hasExistingLog = clsForLog?.logs.some(l => l.date === editingCell?.date && l.period === editingCell?.period);
@@ -1072,7 +1056,6 @@
                                                                 const newData = { ...data };
                                                                 const semester = newData[selectedYear][selectedSemester];
                                                                 const cls = semester.courses.find(c => c.classes.some(cl => cl.id === editingCell.classId)).classes.find(cl => cl.id === editingCell.classId);
-                                                                // 執行陣列過濾，精準剃除該日該節的紀錄
                                                                 cls.logs = cls.logs.filter(l => !(l.date === editingCell.date && l.period === editingCell.period));
                                                                 setData(newData);
                                                                 setIsModalOpen(false);
@@ -1142,7 +1125,7 @@
                                                                         const sel = (formData.examData[activeSettingTab][activeExamKey] || []).includes(ds); 
                                                                         
                                                                         const currentDayIndex = new Date(viewDate.getFullYear(), viewDate.getMonth(), d).getDay();
-                                                                        const defaultColor = currentDayIndex === 0 ? 'text-red-500 bg-red-50/50' : currentDayIndex === 6 ? 'text-blue-500 bg-blue-50/50' : 'text-slate-600 hover:bg-white';
+                                                                        const defaultColor = currentDayIndex === 0 ? 'text-red-500' : currentDayIndex === 6 ? 'text-blue-500' : 'text-slate-600 hover:bg-white';
 
                                                                         grid.push(<button key={d} onClick={() => toggleDateInExam(ds)} className={`aspect-square text-[10px] font-bold rounded-lg transition-all ${sel ? 'bg-indigo-600 text-white shadow-md scale-110' : defaultColor}`}>{d}</button>); 
                                                                     } return grid; 
