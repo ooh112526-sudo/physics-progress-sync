@@ -12,7 +12,7 @@
     
     <!-- 引入 Tailwind CSS -->
     <script src="https://cdn.tailwindcss.com"></script>
-    <!-- 引入 Phosphor Icons -->
+    <!-- 引入 Phosphor Icons (防白屏字體圖示庫) -->
     <script src="https://unpkg.com/@phosphor-icons/web"></script>
     
     <style>
@@ -52,7 +52,7 @@
 
     <script type="text/babel">
         const { useState, useEffect, useMemo, Fragment } = React;
-        const APP_VERSION = "v8.6.0 (最終邊界邏輯補齊版)";
+        const APP_VERSION = "v8.6.0 (究極無損復刻版)";
 
         const THEME_COLORS = [
             { id: 'sky', name: '晴空水藍', h: 199, s: 89, base: 'bg-sky-400', light: 'bg-sky-50', text: 'text-sky-800' },
@@ -116,7 +116,7 @@
             const [modalType, setModalType] = useState(''); 
             const [activeMainView, setActiveMainView] = useState('dashboard');
             const [calendarViewMode, setCalendarViewMode] = useState('week'); 
-            const [currentDate, setCurrentDate] = useState(new Date()); 
+            const [currentDate, setCurrentDate] = useState(new Date("2026-02-23")); 
             const [editingClassId, setEditingClassId] = useState(null);
             const [editingCell, setEditingCell] = useState(null);
             const [expandedSyllabusTab, setExpandedSyllabusTab] = useState('exam1');
@@ -336,7 +336,10 @@
                 else if (type === 'addCourse') { setFormData({ ...formData, name: '', color: 'sky', system: '技高一' }); }
                 else if (type === 'addClass') { setFormData({ ...formData, className: '' }); }
                 else if (type === 'editSchedule') { setEditingClassId(extra); }
-                else if (type === 'semesterSettings') { setFormData({ ...formData, examData: JSON.parse(JSON.stringify(currentSemesterData.settings)) }); setActiveSettingTab('common'); setActiveExamKey(null); setViewDate(new Date(currentDate)); }
+                else if (type === 'semesterSettings') { 
+                    setFormData({ ...formData, examData: JSON.parse(JSON.stringify(currentSemesterData.settings)) }); 
+                    setActiveSettingTab('common'); setActiveExamKey(null); setViewDate(new Date(currentDate)); 
+                }
                 else if (type === 'editSyllabus') { setFormData({ ...formData, syllabusData: JSON.parse(JSON.stringify(currentCourses.find(c => c.id === extra).syllabus || DEFAULT_SYLLABUS)) }); setSelectedCourseId(extra); setExpandedSyllabusTab('exam1'); }
                 else if (type === 'devicePairing') { setInputSyncKey(''); }
                 else if (type === 'confirmDelete') { setDeleteTarget(extra); }
@@ -403,18 +406,23 @@
                 setFormData({ ...formData, logFinishedChapters: newFinished, logPage: targetPage });
             };
 
+            // 💡 尋回功能 1-B: 日曆輔助演算法 (為了段考日期點選)
             const getDaysInMonth = (date) => {
                 const d = new Date(date.getFullYear(), date.getMonth() + 1, 0);
                 const firstDay = new Date(date.getFullYear(), date.getMonth(), 1).getDay();
                 return { firstDay: firstDay === 0 ? 6 : firstDay - 1, days: d.getDate() };
             };
 
+            // 💡 尋回功能 1-C: 段考日期視覺化點擊切換邏輯
             const toggleDateInExam = (dateStr) => {
                 const newExamData = { ...formData.examData };
                 if (!newExamData[activeSettingTab]) newExamData[activeSettingTab] = {};
                 const dates = newExamData[activeSettingTab][activeExamKey] || [];
-                if (dates.includes(dateStr)) newExamData[activeSettingTab][activeExamKey] = dates.filter(d => d !== dateStr);
-                else newExamData[activeSettingTab][activeExamKey] = [...dates, dateStr].sort();
+                if (dates.includes(dateStr)) {
+                    newExamData[activeSettingTab][activeExamKey] = dates.filter(d => d !== dateStr);
+                } else {
+                    newExamData[activeSettingTab][activeExamKey] = [...dates, dateStr].sort();
+                }
                 setFormData({ ...formData, examData: newExamData });
             };
 
@@ -453,10 +461,11 @@
             const moveDate = (amount, unit) => { const d = new Date(currentDate); if (unit === 'week') d.setDate(d.getDate() + amount * 7); else d.setMonth(d.getMonth() + amount); setCurrentDate(d); };
             const weekDays = useMemo(() => { const d = new Date(currentDate); const day = d.getDay(); d.setDate(d.getDate() - day + (day === 0 ? -6 : 1)); return Array.from({ length: 7 }, (_, i) => { const n = new Date(d); n.setDate(n.getDate() + i); return n; }); }, [currentDate]);
 
+            // --- 匯出匯入備份 ---
             const handleExport = () => { try { const blob = new Blob([JSON.stringify(data, null, 2)], { type: "application/json" }); const url = URL.createObjectURL(blob); const link = document.createElement('a'); link.href = url; link.download = `physics_backup_${new Date().toISOString().slice(0, 10)}.json`; link.click(); } catch (e) { console.error(e); } };
             const handleImport = (e) => { const file = e.target.files[0]; if (!file) return; const reader = new FileReader(); reader.onload = (event) => { try { const importedData = JSON.parse(event.target.result); if (importedData) { setData(importedData); setIsModalOpen(false); } } catch (err) { alert("檔案解析失敗"); } }; reader.readAsText(file); e.target.value = ''; };
 
-            if (!isFirebaseReady) return <div className="h-screen flex flex-col items-center justify-center bg-slate-50 text-slate-400"><i className="ph-bold ph-cloud-arrow-up text-5xl mb-4 animate-pulse text-indigo-300"></i><p className="font-bold tracking-widest text-sm">正在連線至雲端金庫...</p></div>;
+            if (!isFirebaseReady) return <div className="h-screen flex flex-col items-center justify-center bg-slate-50 text-slate-400"><i className="ph-bold ph-cloud-arrow-up text-5xl mb-4 animate-pulse text-indigo-300"></i><p className="font-bold">連線雲端金庫中...</p></div>;
 
             return (
                 <div className="flex h-screen bg-slate-50 font-sans text-slate-900 overflow-hidden">
@@ -574,19 +583,21 @@
                                                                 <div key={i} className="p-2 border-r min-h-[90px] relative hover:bg-slate-50/50 transition-colors">
                                                                     {classes.map(cls => {
                                                                         const isBlocked = cls.isHoliday || cls.isExam;
-                                                                        let bgClass = 'bg-sky-50/40 border-slate-100/50 hover:shadow-md active:scale-95';
+                                                                        let bgClass = 'bg-sky-50 border-sky-100 hover:shadow-md';
                                                                         let titleColor = cls.courseTheme.text;
                                                                         let descColor = 'text-slate-500';
                                                                         let descText = `${cls.logPrefix}${cls.logText}`;
                                                                         
-                                                                        if (cls.isHoliday) { bgClass = 'bg-slate-50 border-dashed border-slate-200 cursor-not-allowed opacity-80'; titleColor = 'text-slate-400'; descColor = 'text-rose-400'; descText = `🌴 停課: ${cls.holidayDesc}`; }
-                                                                        else if (cls.isExam) { bgClass = 'bg-amber-50 border-amber-200 cursor-not-allowed shadow-sm opacity-90'; titleColor = 'text-amber-700'; descColor = 'text-amber-600'; descText = `📝 測驗: ${cls.examName}`; }
+                                                                        if (cls.isHoliday) { bgClass = 'bg-slate-50 border-dashed border-slate-200 opacity-70'; titleColor = 'text-slate-400'; descColor = 'text-rose-400'; descText = `🌴 停課: ${cls.holidayDesc}`; }
+                                                                        else if (cls.isExam) { bgClass = 'bg-amber-50 border-amber-200 opacity-90'; titleColor = 'text-amber-700'; descColor = 'text-amber-600'; descText = `📝 測驗: ${cls.examName}`; }
                                                                         else if (!cls.hasLog) { bgClass = 'bg-white border-slate-100 hover:shadow-md'; }
 
                                                                         return (
                                                                             <button key={cls.id} onClick={() => !isBlocked && openModal('classJournal', {cls, date: d, period: p})} className={`w-full p-3 rounded-[16px] text-left transition-all border relative overflow-hidden flex flex-col justify-center mb-1 last:mb-0 ${bgClass}`}>
                                                                                 <div className={`font-black text-[15px] leading-tight mb-1 ${titleColor}`}>{cls.name}</div>
                                                                                 <div className={`text-[11px] font-bold truncate ${descColor}`}>{descText}</div>
+                                                                                
+                                                                                {/* 🌟 尋回功能: 特殊活動藍色光條與打勾標記 */}
                                                                                 {!isBlocked && cls.hasLog && <i className={`ph-bold ph-check-circle absolute top-3 right-3 text-lg ${cls.isSpecialEvent ? 'text-blue-500' : 'text-emerald-500'}`} />}
                                                                                 {!isBlocked && <div className={`absolute bottom-0 left-0 h-[5px] transition-all duration-500 ${cls.hasLog ? 'w-full' : 'w-0'} ${cls.isSpecialEvent ? 'bg-blue-500' : 'bg-emerald-400'}`}></div>}
                                                                             </button>
@@ -706,6 +717,7 @@
                                     
                                     {modalType === 'editSchedule' && (<div className="space-y-4 overflow-x-auto"><div className="grid grid-cols-6 gap-1 min-w-[300px]"><div/>{['一','二','三','四','五'].map(d=><div key={d} className="text-center text-[10px] font-black text-slate-400">週{d}</div>)}{PERIODS.map(p=>(<Fragment key={p}><div className="flex items-center justify-center text-[10px] font-bold text-slate-400">第{p}節</div>{[1,2,3,4,5].map(dIdx=>{ const isSel = currentCourse?.classes.find(c=>c.id===editingClassId)?.schedule.some(s=>s.day===dIdx&&s.period===p); const conflictName = getConflictingClassName(dIdx, p); const hasConflict = isSel && conflictName; return <button key={`${dIdx}-${p}`} onClick={()=>toggleSchedule(dIdx, p)} className={`h-10 rounded-lg border-2 transition-all relative flex flex-col items-center justify-center ${isSel?'bg-indigo-600 border-indigo-600 text-white':hasConflict?'border-rose-400 ring-2 ring-rose-200 bg-rose-50':'bg-slate-50 border-slate-100 hover:bg-slate-100'}`}>{isSel?<i className="ph-bold ph-plus"></i>:conflictName?<span className="text-[8px] font-black opacity-60 text-rose-500 scale-90">{conflictName}</span>:null}</button> })}</Fragment>))}</div></div>)}
                                     
+                                    {/* 💡 尋回功能 2: 視覺化月曆選取器 */}
                                     {modalType === 'semesterSettings' && (
                                         <div className="space-y-6">
                                             <div className="bg-slate-50 p-4 rounded-2xl flex justify-between items-center"><span className="text-sm font-black text-slate-700">學期開學日</span><input type="date" value={formData.examData.startDate||''} onChange={(e)=>setFormData({...formData, examData:{...formData.examData, startDate:e.target.value}})} className="p-2 rounded-xl outline-none" /></div>
