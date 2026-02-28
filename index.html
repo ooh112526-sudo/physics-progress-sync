@@ -642,12 +642,12 @@
                                             <div className="min-w-[900px] overflow-auto flex-1">
                                                 <div className="grid border-b border-slate-100 bg-slate-50/50" style={{ gridTemplateColumns: '60px 2fr 2fr 2fr 2fr 2fr 1fr 1fr' }}>
                                                     <div className="p-4 flex items-center justify-center border-r"><i className="ph-bold ph-clock text-slate-400"></i></div>
-                                                    {/* 🌟 濾鏡：週視圖的標題列 (紅藍雙色與獨立底色) */}
+                                                    {/* 🌟 濾鏡加深：週視圖的標題列 (紅藍雙色與獨立底色) */}
                                                     {weekDays.map((d, i) => {
                                                         const dayIdx = d.getDay();
-                                                        const dayColor = dayIdx === 0 ? 'text-red-500' : dayIdx === 6 ? 'text-blue-500' : 'text-slate-400';
-                                                        const numColor = isToday(d) ? 'text-indigo-600' : dayIdx === 0 ? 'text-red-500' : dayIdx === 6 ? 'text-blue-500' : '';
-                                                        const bgClass = isToday(d) ? 'bg-indigo-50' : dayIdx === 0 ? 'bg-red-50' : dayIdx === 6 ? 'bg-blue-50' : '';
+                                                        const dayColor = dayIdx === 0 ? 'text-red-600' : dayIdx === 6 ? 'text-blue-600' : 'text-slate-500';
+                                                        const numColor = isToday(d) ? 'text-indigo-600' : dayIdx === 0 ? 'text-red-600' : dayIdx === 6 ? 'text-blue-600' : '';
+                                                        const bgClass = isToday(d) ? 'bg-indigo-100' : dayIdx === 0 ? 'bg-red-100' : dayIdx === 6 ? 'bg-blue-100' : '';
                                                         return (
                                                             <div key={i} className={`p-4 text-center border-r transition-colors ${bgClass}`}>
                                                                 <div className={`text-[10px] font-black ${dayColor}`}>週{WEEK_DAYS_DISPLAY[dayIdx]}</div>
@@ -661,9 +661,9 @@
                                                         <div className="border-r flex items-center justify-center text-[11px] font-black text-slate-400 bg-slate-50/30">第{p}節</div>
                                                         {weekDays.map((d, i) => {
                                                             const classes = getDayClasses(d).filter(c => c.period === p);
-                                                            // 🌟 濾鏡：週視圖的內容欄位獨立底色
+                                                            // 🌟 濾鏡加深：週視圖的內容欄位獨立底色
                                                             const dayIdx = d.getDay();
-                                                            const colBg = dayIdx === 0 ? 'bg-red-50' : dayIdx === 6 ? 'bg-blue-50' : 'hover:bg-slate-50';
+                                                            const colBg = dayIdx === 0 ? 'bg-red-100' : dayIdx === 6 ? 'bg-blue-100' : 'hover:bg-slate-50';
                                                             return (
                                                                 <div key={i} className={`p-2 border-r min-h-[90px] relative transition-colors ${colBg}`}>
                                                                     {classes.map(cls => {
@@ -695,9 +695,9 @@
                                         )}
                                         {calendarViewMode === 'month' && (
                                             <div className="p-8 flex-1 overflow-y-auto">
-                                                {/* 🌟 濾鏡：月視圖標題列 (紅藍雙色) */}
+                                                {/* 🌟 濾鏡加深：月視圖標題列 (紅藍雙色) */}
                                                 <div className="grid grid-cols-7 mb-4 border-b border-slate-50 pb-4">
-                                                    {WEEK_DAYS_DISPLAY.map((d, index) => <div key={d} className={`text-center text-xs font-black py-2 ${index === 0 ? 'text-red-500' : index === 6 ? 'text-blue-500' : 'text-slate-400'}`}>週{d}</div>)}
+                                                    {WEEK_DAYS_DISPLAY.map((d, index) => <div key={d} className={`text-center text-xs font-black py-2 ${index === 0 ? 'text-red-600' : index === 6 ? 'text-blue-600' : 'text-slate-500'}`}>週{d}</div>)}
                                                 </div>
                                                 <div className="grid grid-cols-7 gap-3">
                                                     {(() => {
@@ -706,10 +706,10 @@
                                                         for(let d=1;d<=dim;d++) {
                                                             const dateObj=new Date(y,m,d); const dk=formatDateKey(dateObj); const ho=getHoliday(dk); const isH=!!ho; const classes=getDayClasses(dateObj); const exams=getGlobalExams(dk, currentSemesterData.settings);
                                                             
-                                                            // 🌟 濾鏡：月曆格子的數字顏色與絕對獨立底色
+                                                            // 🌟 濾鏡加深：月曆格子的數字顏色與絕對獨立底色
                                                             const dayIdx = dateObj.getDay();
-                                                            const numColor = isH ? 'text-rose-500' : dayIdx === 0 ? 'text-red-500' : dayIdx === 6 ? 'text-blue-500' : 'text-slate-600';
-                                                            const cellBgClass = isH ? 'bg-rose-50 border-rose-200' : dayIdx === 0 ? 'bg-red-50 border-red-100 hover:bg-red-100' : dayIdx === 6 ? 'bg-blue-50 border-blue-100 hover:bg-blue-100' : 'bg-white hover:bg-slate-50 border-slate-100';
+                                                            const numColor = isH ? 'text-rose-600' : dayIdx === 0 ? 'text-red-600' : dayIdx === 6 ? 'text-blue-600' : 'text-slate-600';
+                                                            const cellBgClass = isH ? 'bg-rose-100 border-rose-200' : dayIdx === 0 ? 'bg-red-100 border-red-200 hover:bg-red-200' : dayIdx === 6 ? 'bg-blue-100 border-blue-200 hover:bg-blue-200' : 'bg-white hover:bg-slate-50 border-slate-100';
 
                                                             grid.push(
                                                                 <div key={d} 
@@ -897,8 +897,8 @@
                                                                 <button onClick={() => setViewDate(new Date(viewDate.getFullYear(), viewDate.getMonth() + 1, 1))} className="p-1 hover:bg-white rounded-lg"><i className="ph-bold ph-caret-right"></i></button>
                                                             </div>
                                                             <div className="grid grid-cols-7 gap-1">
-                                                                {/* 🌟 濾鏡：設定視窗的微型月曆標題列 */}
-                                                                {WEEK_DAYS_DISPLAY.map((d, index) => <div key={d} className={`text-center text-[9px] font-black py-1 ${index === 0 ? 'text-red-500' : index === 6 ? 'text-blue-500' : 'text-slate-400'}`}>{d}</div>)}
+                                                                {/* 🌟 濾鏡加深：設定視窗的微型月曆標題列 */}
+                                                                {WEEK_DAYS_DISPLAY.map((d, index) => <div key={d} className={`text-center text-[9px] font-black py-1 ${index === 0 ? 'text-red-600' : index === 6 ? 'text-blue-600' : 'text-slate-500'}`}>{d}</div>)}
                                                                 {(() => { 
                                                                     const { firstDay, days } = getDaysInMonth(viewDate); const grid = []; 
                                                                     for(let i=0; i<firstDay; i++) grid.push(<div key={`e-${i}`} />); 
@@ -906,9 +906,9 @@
                                                                         const ds = `${viewDate.getFullYear()}-${(viewDate.getMonth()+1).toString().padStart(2,'0')}-${d.toString().padStart(2,'0')}`; 
                                                                         const sel = (formData.examData[activeSettingTab][activeExamKey] || []).includes(ds); 
                                                                         
-                                                                        // 🌟 濾鏡：設定視窗的微型月曆網格背景
+                                                                        // 🌟 濾鏡加深：設定視窗的微型月曆網格背景
                                                                         const currentDayIndex = new Date(viewDate.getFullYear(), viewDate.getMonth(), d).getDay();
-                                                                        const defaultColor = currentDayIndex === 0 ? 'text-red-500 bg-red-50' : currentDayIndex === 6 ? 'text-blue-500 bg-blue-50' : 'text-slate-600 hover:bg-white';
+                                                                        const defaultColor = currentDayIndex === 0 ? 'text-red-600 bg-red-100' : currentDayIndex === 6 ? 'text-blue-600 bg-blue-100' : 'text-slate-600 hover:bg-white';
 
                                                                         grid.push(<button key={d} onClick={() => toggleDateInExam(ds)} className={`aspect-square text-[10px] font-bold rounded-lg transition-all ${sel ? 'bg-indigo-600 text-white shadow-md scale-110' : defaultColor}`}>{d}</button>); 
                                                                     } return grid; 
