@@ -4,18 +4,21 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>課堂進度同步儀 - 物理教師專用</title>
+    
     <!-- 引入 React 核心與編譯器 -->
     <script src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
     <script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
     <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+    
     <!-- 引入 Tailwind CSS (美化) -->
     <script src="https://cdn.tailwindcss.com"></script>
-    <!-- 引入與 React 相容的 Lucide 圖示庫 -->
-    <script src="https://unpkg.com/lucide-react@0.292.0/dist/umd/lucide-react.min.js"></script>
+    
+    <!-- 🌟 關鍵修復：改用 Phosphor Icons 字體版，徹底根絕 React #130 崩潰錯誤 -->
+    <script src="https://unpkg.com/@phosphor-icons/web"></script>
     
     <style>
         body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif; }
-        .animate-in { animation: fadeIn 0.3s ease-out; }
+        .animate-in { animation: fadeIn 0.4s ease-out; }
         @keyframes fadeIn { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: translateY(0); } }
         /* 隱藏滾動條但保留功能 */
         ::-webkit-scrollbar { width: 6px; height: 6px; }
@@ -33,7 +36,7 @@
         import { getAuth, signInAnonymously, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-auth.js";
         import { getFirestore, doc, setDoc, onSnapshot } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-firestore.js";
 
-        // 老師您的專屬金鑰 (已鎔鑄)
+        // 老師您的專屬金鑰
         const firebaseConfig = {
             apiKey: "AIzaSyBduUmDpYh6lv8v-86Tmiay_8xe2dPmehI",
             authDomain: "physics-sync-2026.firebaseapp.com",
@@ -63,12 +66,8 @@
     <!-- 🚀 系統核心大腦 (React) -->
     <script type="text/babel">
         const { useState, useEffect, useMemo } = React;
-        // 確保精確載入小寫的 lucideReact 字典
-        const { 
-            Book, Users, Plus, Edit2, Trash2, Menu, X, Calendar, ChevronDown, Minus, Clock, ShieldAlert, AlertCircle, Flag, ChevronLeft, ChevronRight, Layers, CheckCircle2, ListChecks, ArrowLeft, Palmtree, LayoutDashboard, CalendarDays, ArrowUp, ArrowDown, Copy, Download, Upload, Database, Cloud, CloudOff, Smartphone, Key 
-        } = window.lucideReact;
 
-        const APP_VERSION = "v8.2.1 (正式生產線版)";
+        const APP_VERSION = "v8.2.2 (極致穩定版)";
         
         const THEME_COLORS = [
             { id: 'sky', name: '晴空水藍', h: 199, s: 89, base: 'bg-sky-400', light: 'bg-sky-50', text: 'text-sky-800' },
@@ -77,9 +76,6 @@
             { id: 'rose', name: '蜜桃粉橘', h: 350, s: 89, base: 'bg-rose-400', light: 'bg-rose-50', text: 'text-rose-800' },
             { id: 'amber', name: '奶油暖黃', h: 45, s: 93, base: 'bg-amber-400', light: 'bg-amber-50', text: 'text-amber-800' }
         ];
-
-        const WEEK_DAYS_DISPLAY = ['一', '二', '三', '四', '五', '六', '日'];
-        const PERIODS = [1, 2, 3, 4, 5, 6, 7, 8];
 
         const DEFAULT_SYLLABUS = {
             exam1: [{ title: "1-1 物理學的發展", pages: 0 }, { title: "1-2 物理量單位", pages: 0 }],
@@ -117,7 +113,7 @@
                 return () => window.removeEventListener('firebaseReady', handleReady);
             }, []);
 
-            // ☁️ 身分驗證 (等待綠燈後執行)
+            // ☁️ 身分驗證
             useEffect(() => {
                 if (!isFirebaseReady || !window.firebase) return;
                 const { auth, signInAnonymously, onAuthStateChanged } = window.firebase;
@@ -127,7 +123,7 @@
                 return () => unsubscribe();
             }, [isFirebaseReady]);
 
-            // ☁️ 雲端即時同步 (onSnapshot)
+            // ☁️ 雲端即時同步
             useEffect(() => {
                 if (!user || !syncKey || !isFirebaseReady || !window.firebase) return; 
                 const { db, currentAppId, doc, onSnapshot, setDoc } = window.firebase;
@@ -140,9 +136,6 @@
                     } else {
                         setDoc(docRef, { appData: data }, { merge: true }).catch(() => {});
                     }
-                    setIsCloudLoaded(true);
-                }, (error) => {
-                    console.error("雲端連線失敗:", error);
                     setIsCloudLoaded(true);
                 });
                 return () => unsubscribe();
@@ -161,22 +154,16 @@
             const [selectedSemester, setSelectedSemester] = useState("下學期");
             const [selectedCourseId, setSelectedCourseId] = useState(null);
             const [activeMainView, setActiveMainView] = useState('dashboard');
-            const [calendarViewMode, setCalendarViewMode] = useState('week'); 
-            const [currentDate, setCurrentDate] = useState(new Date()); 
             const [isSidebarOpen, setIsSidebarOpen] = useState(false);
             const [isModalOpen, setIsModalOpen] = useState(false);
             const [modalType, setModalType] = useState(''); 
             const [deleteTarget, setDeleteTarget] = useState(null); 
             const [formData, setFormData] = useState({ system: '技高一', name: '', color: 'sky', className: '' });
 
-            const currentSemesterData = data[selectedYear]?.[selectedSemester] || { settings: { startDate: '', common: {}, v3: {}, s3: {}, holidays: [] }, courses: [] };
+            const currentSemesterData = data[selectedYear]?.[selectedSemester] || { settings: { startDate: '', holidays: [] }, courses: [] };
             const currentCourses = currentSemesterData.courses || [];
             const currentCourse = currentCourses.find(c => c.id === selectedCourseId) || null;
             const currentTheme = THEME_COLORS.find(t => t.id === (currentCourse?.themeId || 'sky')) || THEME_COLORS[0];
-            
-            const formatDateKey = (date) => `${date.getFullYear()}-${(date.getMonth() + 1).toString().padStart(2, '0')}-${date.getDate().toString().padStart(2, '0')}`;
-            const isToday = (date) => formatDateKey(date) === formatDateKey(new Date());
-            const getHoliday = (dateKey) => (currentSemesterData.settings.holidays || []).find(h => (typeof h === 'string' ? h : h.date) === dateKey);
 
             const openModal = (type, extra = null) => {
                 setModalType(type);
@@ -192,10 +179,7 @@
                 if (deleteTarget.type === 'course') {
                     semester.courses = semester.courses.filter(c => c.id !== deleteTarget.id);
                     if (selectedCourseId === deleteTarget.id) setSelectedCourseId(null);
-                } else if (deleteTarget.type === 'class') {
-                    const course = semester.courses.find(c => c.id === deleteTarget.courseId);
-                    if (course) course.classes = course.classes.filter(cl => cl.id !== deleteTarget.id);
-                }
+                } 
                 setData(newData); setIsModalOpen(false); setDeleteTarget(null);
             };
 
@@ -213,7 +197,7 @@
             if (!isFirebaseReady) {
                 return (
                     <div className="h-screen flex flex-col items-center justify-center bg-slate-50 text-slate-400">
-                        <Cloud className="w-10 h-10 mb-4 animate-pulse text-indigo-300" />
+                        <i className="ph-bold ph-cloud text-5xl mb-4 animate-pulse text-indigo-300"></i>
                         <p className="font-bold tracking-widest text-sm">正在連線至雲端金庫...</p>
                     </div>
                 );
@@ -224,9 +208,9 @@
                     {/* 側邊欄 */}
                     <div className={`fixed inset-y-0 left-0 z-30 w-64 bg-white border-r lg:static lg:translate-x-0 flex flex-col transition-transform ${isSidebarOpen ? 'translate-x-0' : '-translate-x-full'}`}>
                         <div className="flex items-center gap-3 h-16 px-6 border-b border-slate-100 shrink-0">
-                            <Calendar className="w-6 h-6 text-indigo-600" />
+                            <i className="ph-bold ph-calendar-check text-indigo-600 text-2xl"></i>
                             <span className="font-bold text-lg">進度同步儀</span>
-                            <button onClick={() => setIsSidebarOpen(false)} className="lg:hidden ml-auto p-1"><X className="w-5 h-5"/></button>
+                            <button onClick={() => setIsSidebarOpen(false)} className="lg:hidden ml-auto p-1 text-slate-400"><i className="ph-bold ph-x text-xl"></i></button>
                         </div>
                         <div className="p-4 border-b border-slate-100 bg-slate-50/50">
                             <div className="w-full p-3 bg-white rounded-xl border border-slate-200 shadow-sm text-sm font-bold text-slate-600 text-center">
@@ -236,7 +220,7 @@
                         <div className="flex-1 overflow-y-auto p-4">
                             <div className="flex items-center justify-between mb-4 px-2 text-[10px] font-black text-slate-400 uppercase tracking-widest">
                                 <span>課程清單</span>
-                                <button onClick={() => openModal('addCourse')} className="p-1 hover:text-indigo-600"><Plus className="w-4 h-4" /></button>
+                                <button onClick={() => openModal('addCourse')} className="p-1 hover:text-indigo-600"><i className="ph-bold ph-plus text-base"></i></button>
                             </div>
                             <div className="space-y-1">
                                 {currentCourses.map(c => (
@@ -246,8 +230,8 @@
                                                 <div className={`w-2 h-2 rounded-full shrink-0 ${THEME_COLORS.find(t=>t.id===c.themeId).base}`}></div>
                                                 <span className="font-bold text-sm truncate">{c.name}</span>
                                             </button>
-                                            <button onClick={(e) => { e.stopPropagation(); openModal('confirmDelete', { type: 'course', id: c.id, name: c.name }); }} className="opacity-0 group-hover:opacity-100 p-1.5 text-slate-300 hover:text-rose-500 rounded-md transition-all">
-                                                <Trash2 className="w-4 h-4" />
+                                            <button onClick={(e) => { e.stopPropagation(); openModal('confirmDelete', { type: 'course', id: c.id, name: c.name }); }} className="opacity-0 group-hover:opacity-100 p-1 text-slate-300 hover:text-rose-500 rounded-md transition-all">
+                                                <i className="ph-bold ph-trash text-base"></i>
                                             </button>
                                         </div>
                                     </div>
@@ -256,7 +240,7 @@
                         </div>
                         <div className="p-4 border-t border-slate-100 space-y-2">
                             <button onClick={() => openModal('devicePairing')} className="w-full flex items-center justify-center gap-2 py-3 bg-indigo-50 text-indigo-600 rounded-xl text-xs font-bold border border-indigo-200 hover:bg-indigo-100 transition-all shadow-sm">
-                                <Smartphone className="w-4 h-4" /> 跨裝置連線
+                                <i className="ph-bold ph-device-mobile text-base"></i> 跨裝置連線
                             </button>
                         </div>
                     </div>
@@ -265,13 +249,13 @@
                     <div className="flex-1 flex flex-col h-screen overflow-hidden relative">
                         <div className="w-full bg-white border-b px-4 lg:px-8 z-20 h-20 flex items-center justify-between shrink-0">
                             <div className="flex items-center gap-2 lg:gap-4">
-                                <button onClick={() => setIsSidebarOpen(true)} className="lg:hidden p-2 -ml-2"><Menu className="w-6 h-6"/></button>
+                                <button onClick={() => setIsSidebarOpen(true)} className="lg:hidden p-2 -ml-2 text-slate-600"><i className="ph-bold ph-list text-2xl"></i></button>
                                 <div className="flex bg-slate-100 p-1 rounded-xl">
                                     <button onClick={() => setActiveMainView('dashboard')} className={`flex items-center gap-1.5 px-3 py-2 rounded-lg text-xs font-black transition-all ${activeMainView === 'dashboard' ? 'bg-white text-slate-800 shadow-sm' : 'text-slate-500 hover:text-slate-700'}`}>儀表板</button>
                                     <button onClick={() => setActiveMainView('calendar')} className={`flex items-center gap-1.5 px-3 py-2 rounded-lg text-xs font-black transition-all ${activeMainView === 'calendar' ? 'bg-white text-slate-800 shadow-sm' : 'text-slate-500 hover:text-slate-700'}`}>行事曆</button>
                                 </div>
                                 <div className="flex items-center px-2">
-                                    {user && isCloudLoaded ? <Cloud className="w-5 h-5 text-indigo-500" title="雲端已同步" /> : <CloudOff className="w-5 h-5 text-slate-300 animate-pulse" title="雲端連線中..." />}
+                                    {user && isCloudLoaded ? <i className="ph-fill ph-cloud-check text-emerald-500 text-xl" title="雲端已同步"></i> : <i className="ph-bold ph-cloud-slash text-slate-300 text-xl animate-pulse" title="雲端連線中..."></i>}
                                 </div>
                             </div>
                             <div className="hidden sm:block text-[10px] font-black text-slate-400 tracking-widest uppercase">{APP_VERSION}</div>
@@ -283,32 +267,30 @@
                                     currentCourse ? (
                                         <div className="space-y-8 animate-in">
                                             <div className="flex items-center gap-5 bg-white p-6 lg:p-10 rounded-[40px] shadow-sm border border-slate-100 relative overflow-hidden">
-                                                <div className={`p-5 rounded-2xl text-white shadow-lg ${currentTheme.base}`}><Book className="w-10 h-10" /></div>
+                                                <div className={`p-5 rounded-2xl text-white shadow-lg ${currentTheme.base}`}><i className="ph-fill ph-book-open-text text-[40px]"></i></div>
                                                 <div>
-                                                    <h1 className="text-3xl font-black text-slate-800 tracking-tight">{currentCourse.system}{currentCourse.name}</h1>
-                                                    <p className="text-sm text-slate-400 font-bold mt-1">共有 {currentCourse.classes?.length || 0} 個管理班級</p>
+                                                    <h1 className="text-3xl font-black text-slate-800 tracking-tight">{currentCourse.system} {currentCourse.name}</h1>
+                                                    <p className="text-sm text-slate-400 font-bold mt-1">專屬課程管理儀表板</p>
                                                 </div>
                                                 <div className={`absolute top-0 right-0 w-32 h-32 opacity-5 rounded-full -mr-10 -mt-10 ${currentTheme.base}`}></div>
                                             </div>
                                             
-                                            {(!currentCourse.classes || currentCourse.classes.length === 0) && (
-                                                <div className="bg-slate-50 rounded-[32px] border-2 border-dashed border-slate-200 p-10 flex flex-col items-center justify-center gap-3 text-slate-400 font-black">
-                                                    <LayoutDashboard className="w-12 h-12 mb-2 opacity-50" />
-                                                    <span>您尚未建立任何班級</span>
-                                                    <span className="text-xs font-bold text-slate-400">系統即將在此擴充「新增班級」功能，目前請先體驗雲端連線。</span>
-                                                </div>
-                                            )}
+                                            <div className="bg-slate-50 rounded-[32px] border-2 border-dashed border-slate-200 p-10 flex flex-col items-center justify-center gap-3 text-slate-400 font-black">
+                                                <i className="ph-fill ph-student text-5xl mb-2 opacity-50"></i>
+                                                <span>您已經成功連接 Firebase 雲端資料庫！</span>
+                                                <span className="text-xs font-bold text-slate-400">現在您可以點擊左側「跨裝置連線」，在手機上測試進度同步。</span>
+                                            </div>
                                         </div>
                                     ) : (
-                                        <div className="h-full flex flex-col items-center justify-center text-slate-300 py-20">
-                                            <Database className="w-20 h-20 mb-6 opacity-20" />
+                                        <div className="h-full flex flex-col items-center justify-center text-slate-300 py-20 animate-in">
+                                            <i className="ph-fill ph-database text-[80px] mb-6 opacity-20"></i>
                                             <h2 className="text-2xl font-black text-slate-400">尚未選取課程</h2>
                                             <p className="text-sm font-bold text-slate-400 mt-2">請從左側選單點擊「+」新增，或選取一門課程開始管理</p>
                                         </div>
                                     )
                                 ) : (
-                                    <div className="h-full flex flex-col items-center justify-center bg-white rounded-[40px] border border-slate-100 shadow-sm">
-                                        <CalendarDays className="w-20 h-20 text-slate-200 mb-6" />
+                                    <div className="h-full flex flex-col items-center justify-center bg-white rounded-[40px] border border-slate-100 shadow-sm animate-in">
+                                        <i className="ph-fill ph-calendar-blank text-[80px] text-slate-200 mb-6"></i>
                                         <h2 className="text-2xl font-black text-slate-400">行事曆視圖已就緒</h2>
                                         <p className="text-sm font-bold text-slate-400 mt-2">正式上線後，您可以在這裡查看各班詳細的進度落點與課表。</p>
                                     </div>
@@ -323,7 +305,7 @@
                             <div className="bg-white rounded-[48px] shadow-2xl w-full max-w-md overflow-hidden animate-in">
                                 <div className="px-10 py-6 bg-slate-50 border-b border-slate-100 flex items-center justify-between">
                                     <h3 className="font-black text-slate-800 uppercase tracking-tight">{modalType === 'addCourse' ? '新增教學課程' : modalType === 'confirmDelete' ? '⚠ 刪除確認' : '跨裝置同步中樞'}</h3>
-                                    <button onClick={() => setIsModalOpen(false)} className="p-2 hover:bg-white rounded-xl text-slate-400 transition-colors"><X className="w-6 h-6" /></button>
+                                    <button onClick={() => setIsModalOpen(false)} className="p-2 hover:bg-white rounded-xl text-slate-400 transition-colors"><i className="ph-bold ph-x text-xl"></i></button>
                                 </div>
                                 <div className="p-10">
                                     {modalType === 'addCourse' && (
@@ -344,7 +326,7 @@
                                     )}
                                     {modalType === 'confirmDelete' && deleteTarget && (
                                         <div className="text-center space-y-6">
-                                            <AlertCircle className="text-rose-500 w-16 h-16 mx-auto animate-pulse" />
+                                            <i className="ph-fill ph-warning-circle text-rose-500 text-6xl mx-auto animate-pulse"></i>
                                             <div>
                                                 <h4 className="text-xl font-black text-slate-800">確定要刪除「{deleteTarget.name}」嗎？</h4>
                                                 <p className="text-sm font-bold text-rose-400 mt-2">⚠️ 資料將從雲端同步抹除，且無法還原。</p>
@@ -361,7 +343,7 @@
                                                 <div className="p-6 bg-indigo-50 rounded-[32px] border border-indigo-100 relative">
                                                     <p className="text-[10px] font-black text-indigo-400 mb-3 uppercase tracking-widest">本機同步金鑰</p>
                                                     <div className="flex items-center justify-center gap-3">
-                                                        <span className="text-3xl font-black text-indigo-700 tracking-[0.2em]">{syncKey}</span>
+                                                        <span className="text-3xl font-black text-indigo-700 tracking-[0.2em] relative z-10">{syncKey}</span>
                                                         <button onClick={() => { 
                                                             const el = document.createElement('textarea');
                                                             el.value = syncKey;
@@ -370,10 +352,11 @@
                                                             document.execCommand('copy');
                                                             document.body.removeChild(el);
                                                             alert("✅ 鑰匙已複製！");
-                                                        }} className="p-2 hover:bg-white rounded-xl text-indigo-400 shadow-sm transition-all active:scale-90">
-                                                            <Copy className="w-5 h-5" />
+                                                        }} className="p-2 hover:bg-white rounded-xl text-indigo-400 shadow-sm transition-all active:scale-90 relative z-10">
+                                                            <i className="ph-bold ph-copy text-xl"></i>
                                                         </button>
                                                     </div>
+                                                    <i className="ph-fill ph-key absolute -bottom-2 -right-2 text-[60px] text-indigo-100 opacity-50"></i>
                                                 </div>
                                                 <p className="text-xs font-bold text-slate-400 mt-6 leading-relaxed">在手機或其他裝置輸入此金鑰，<br/>即可達成「量子糾纏」般的即時同步。</p>
                                             </div>
