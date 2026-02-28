@@ -10,33 +10,29 @@
     <script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
     <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
     
-    <!-- 引入 Tailwind CSS (美化) -->
+    <!-- 引入 Tailwind CSS -->
     <script src="https://cdn.tailwindcss.com"></script>
-    
-    <!-- 🌟 關鍵修復：改用 Phosphor Icons 字體版，徹底根絕 React #130 崩潰錯誤 -->
+    <!-- 引入 Phosphor Icons (防白屏字體圖示庫) -->
     <script src="https://unpkg.com/@phosphor-icons/web"></script>
     
     <style>
         body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif; }
-        .animate-in { animation: fadeIn 0.4s ease-out; }
+        .animate-in { animation: fadeIn 0.3s ease-out; }
         @keyframes fadeIn { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: translateY(0); } }
-        /* 隱藏滾動條但保留功能 */
         ::-webkit-scrollbar { width: 6px; height: 6px; }
         ::-webkit-scrollbar-track { background: transparent; }
         ::-webkit-scrollbar-thumb { background: #cbd5e1; border-radius: 10px; }
-        ::-webkit-scrollbar-thumb:hover { background: #94a3b8; }
     </style>
 </head>
 <body class="bg-slate-50">
     <div id="root"></div>
 
-    <!-- ☁️ 雲端金庫連線模組 -->
     <script type="module">
         import { initializeApp } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-app.js";
         import { getAuth, signInAnonymously, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-auth.js";
         import { getFirestore, doc, setDoc, onSnapshot } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-firestore.js";
 
-        // 老師您的專屬金鑰
+        // 老師您的專屬金鑰 (已確保對接)
         const firebaseConfig = {
             apiKey: "AIzaSyBduUmDpYh6lv8v-86Tmiay_8xe2dPmehI",
             authDomain: "physics-sync-2026.firebaseapp.com",
@@ -48,251 +44,244 @@
         
         try {
             const app = initializeApp(firebaseConfig);
-            const auth = getAuth(app);
-            const db = getFirestore(app);
-            const currentAppId = "physics-sync-2026";
-
-            // 將工具打包給 React 引擎使用
-            window.firebase = { auth, db, currentAppId, signInAnonymously, onAuthStateChanged, doc, setDoc, onSnapshot };
-            
-            // 發送綠燈訊號：雲端管線已接通！
-            window.firebaseReady = true;
-            window.dispatchEvent(new Event('firebaseReady'));
-        } catch (error) {
-            console.error("Firebase 連線初始化失敗:", error);
-        }
+            window.firebase = { auth: getAuth(app), db: getFirestore(app), currentAppId: "physics-sync-2026", signInAnonymously, onAuthStateChanged, doc, setDoc, onSnapshot };
+            window.firebaseReady = true; window.dispatchEvent(new Event('firebaseReady'));
+        } catch (e) { console.error("Firebase Init Error:", e); }
     </script>
 
-    <!-- 🚀 系統核心大腦 (React) -->
     <script type="text/babel">
         const { useState, useEffect, useMemo } = React;
+        const APP_VERSION = "v8.2.0 (雲端滿血版)";
 
-        const APP_VERSION = "v8.2.2 (極致穩定版)";
-        
         const THEME_COLORS = [
             { id: 'sky', name: '晴空水藍', h: 199, s: 89, base: 'bg-sky-400', light: 'bg-sky-50', text: 'text-sky-800' },
             { id: 'teal', name: '沁涼薄荷', h: 174, s: 86, base: 'bg-teal-400', light: 'bg-teal-50', text: 'text-teal-800' },
             { id: 'fuchsia', name: '丁香淺紫', h: 298, s: 70, base: 'bg-fuchsia-400', light: 'bg-fuchsia-50', text: 'text-fuchsia-800' },
+            { id: 'violet', name: '夢幻深紫', h: 265, s: 75, base: 'bg-violet-400', light: 'bg-violet-50', text: 'text-violet-800' },
             { id: 'rose', name: '蜜桃粉橘', h: 350, s: 89, base: 'bg-rose-400', light: 'bg-rose-50', text: 'text-rose-800' },
+            { id: 'orange', name: '活力暖橘', h: 25, s: 95, base: 'bg-orange-400', light: 'bg-orange-50', text: 'text-orange-800' },
             { id: 'amber', name: '奶油暖黃', h: 45, s: 93, base: 'bg-amber-400', light: 'bg-amber-50', text: 'text-amber-800' }
         ];
 
-        const DEFAULT_SYLLABUS = {
-            exam1: [{ title: "1-1 物理學的發展", pages: 0 }, { title: "1-2 物理量單位", pages: 0 }],
-            exam2: [{ title: "2-1 速度", pages: 0 }, { title: "2-2 加速度", pages: 0 }],
-            exam3: [{ title: "3-1 牛頓定律", pages: 0 }]
-        };
-
-        const initialData = {
-            "114": {
-                "下學期": {
-                    settings: { startDate: "2026-02-11", common: { exam1: [], exam2: [], exam3: [] }, v3: { exam1: [], exam2: [], exam3: [] }, s3: { exam1: [], exam2: [], exam3: [] }, holidays: [] },
-                    courses: []
-                }
-            }
-        };
+        const WEEK_DAYS_DISPLAY = ['一', '二', '三', '四', '五', '六', '日'];
+        const PERIODS = [1, 2, 3, 4, 5, 6, 7, 8];
+        const DEFAULT_SYLLABUS = { exam1: [{ title: "1-1 物理學的發展", pages: 0 }, { title: "1-2 物理量單位", pages: 0 }], exam2: [{ title: "2-1 速度", pages: 0 }, { title: "2-2 加速度", pages: 0 }], exam3: [{ title: "3-1 牛頓定律", pages: 0 }] };
+        const initialData = { "114": { "下學期": { settings: { startDate: "2026-02-11", common: { exam1: ["2026-03-25", "2026-03-26"], exam2: ["2026-05-12"], exam3: ["2026-06-28"] }, v3: { exam1: [], exam2: [], exam3: [] }, s3: { exam1: [], exam2: [], exam3: [] }, holidays: [{ date: "2026-02-28", desc: "和平紀念日" }] }, courses: [] } } };
 
         function App() {
             const [isFirebaseReady, setIsFirebaseReady] = useState(window.firebaseReady || false);
             const [user, setUser] = useState(null);
             const [isCloudLoaded, setIsCloudLoaded] = useState(false);
-            const [syncKey, setSyncKey] = useState(() => {
-                const stored = localStorage.getItem('physics_sync_key');
-                if (stored) return stored;
-                const newKey = 'PHY-' + Math.random().toString(36).substring(2, 7).toUpperCase();
-                localStorage.setItem('physics_sync_key', newKey);
-                return newKey;
-            });
-            const [inputSyncKey, setInputSyncKey] = useState(''); 
+            const [syncKey, setSyncKey] = useState(() => localStorage.getItem('physics_sync_key') || ('PHY-' + Math.random().toString(36).substring(2, 7).toUpperCase()));
+            useEffect(() => localStorage.setItem('physics_sync_key', syncKey), [syncKey]);
             const [data, setData] = useState(initialData);
 
-            // 🟢 等待 Firebase 綠燈
-            useEffect(() => {
-                const handleReady = () => setIsFirebaseReady(true);
-                window.addEventListener('firebaseReady', handleReady);
-                return () => window.removeEventListener('firebaseReady', handleReady);
-            }, []);
-
-            // ☁️ 身分驗證
-            useEffect(() => {
-                if (!isFirebaseReady || !window.firebase) return;
-                const { auth, signInAnonymously, onAuthStateChanged } = window.firebase;
-                
-                signInAnonymously(auth).catch(err => console.error("登入失敗:", err));
-                const unsubscribe = onAuthStateChanged(auth, setUser);
-                return () => unsubscribe();
-            }, [isFirebaseReady]);
-
-            // ☁️ 雲端即時同步
+            useEffect(() => { const h = () => setIsFirebaseReady(true); window.addEventListener('firebaseReady', h); return () => window.removeEventListener('firebaseReady', h); }, []);
+            useEffect(() => { if (!isFirebaseReady || !window.firebase) return; window.firebase.signInAnonymously(window.firebase.auth).catch(e=>console.error(e)); const unsub = window.firebase.onAuthStateChanged(window.firebase.auth, setUser); return () => unsub(); }, [isFirebaseReady]);
             useEffect(() => {
                 if (!user || !syncKey || !isFirebaseReady || !window.firebase) return; 
-                const { db, currentAppId, doc, onSnapshot, setDoc } = window.firebase;
-                const docRef = doc(db, 'artifacts', currentAppId, 'public', 'data', 'shared_progress', syncKey);
-
-                const unsubscribe = onSnapshot(docRef, (docSnap) => {
-                    if (docSnap.exists() && docSnap.data().appData) {
-                        const serverData = docSnap.data().appData;
-                        setData(prev => (JSON.stringify(prev) === JSON.stringify(serverData) ? prev : serverData));
-                    } else {
-                        setDoc(docRef, { appData: data }, { merge: true }).catch(() => {});
-                    }
+                const docRef = window.firebase.doc(window.firebase.db, 'artifacts', window.firebase.currentAppId, 'public', 'data', 'shared_progress', syncKey);
+                const unsub = window.firebase.onSnapshot(docRef, (docSnap) => {
+                    if (docSnap.exists() && docSnap.data().appData) setData(prev => JSON.stringify(prev) === JSON.stringify(docSnap.data().appData) ? prev : docSnap.data().appData);
+                    else window.firebase.setDoc(docRef, { appData: data }, { merge: true }).catch(()=>{});
                     setIsCloudLoaded(true);
                 });
-                return () => unsubscribe();
+                return () => unsub();
             }, [user, syncKey, isFirebaseReady]); 
-
-            // ☁️ 自動存檔至雲端
             useEffect(() => {
                 if (!user || !isCloudLoaded || !syncKey || !window.firebase) return;
-                const { db, currentAppId, doc, setDoc } = window.firebase;
-                const docRef = doc(db, 'artifacts', currentAppId, 'public', 'data', 'shared_progress', syncKey);
-                setDoc(docRef, { appData: data }, { merge: true }).catch(err => console.error("存檔失敗", err));
+                window.firebase.setDoc(window.firebase.doc(window.firebase.db, 'artifacts', window.firebase.currentAppId, 'public', 'data', 'shared_progress', syncKey), { appData: data }, { merge: true }).catch(e=>console.error(e));
             }, [data, user, isCloudLoaded, syncKey]);
 
-            // --- UI 狀態控制 ---
+            // --- 核心狀態 ---
             const [selectedYear, setSelectedYear] = useState("114");
             const [selectedSemester, setSelectedSemester] = useState("下學期");
             const [selectedCourseId, setSelectedCourseId] = useState(null);
-            const [activeMainView, setActiveMainView] = useState('dashboard');
             const [isSidebarOpen, setIsSidebarOpen] = useState(false);
             const [isModalOpen, setIsModalOpen] = useState(false);
             const [modalType, setModalType] = useState(''); 
+            const [activeMainView, setActiveMainView] = useState('dashboard');
+            const [calendarViewMode, setCalendarViewMode] = useState('week'); 
+            const [currentDate, setCurrentDate] = useState(new Date("2026-02-23")); 
+            const [editingClassId, setEditingClassId] = useState(null);
+            const [editingCell, setEditingCell] = useState(null);
+            const [expandedSyllabusTab, setExpandedSyllabusTab] = useState('exam1');
             const [deleteTarget, setDeleteTarget] = useState(null); 
-            const [formData, setFormData] = useState({ system: '技高一', name: '', color: 'sky', className: '' });
+            const [formData, setFormData] = useState({ system: '技高一', name: '', color: 'sky', className: '', year: '114', semester: '下學期', importSource: 'none', logPage: '', logChapter: '', logFinishedChapters: [], logEvent: null, logEventText: '', holidayDate: '', holidayDesc: '', examData: { startDate: '', common: {}, v3: {}, s3: {} }, syllabusData: { exam1: [], exam2: [], exam3: [] } });
+            const [activeExamKey, setActiveExamKey] = useState(null);
+            const [activeSettingTab, setActiveSettingTab] = useState('common');
+            const [viewDate, setViewDate] = useState(new Date("2026-02-01"));
+            const [inputSyncKey, setInputSyncKey] = useState('');
 
-            const currentSemesterData = data[selectedYear]?.[selectedSemester] || { settings: { startDate: '', holidays: [] }, courses: [] };
+            const currentSemesterData = data[selectedYear]?.[selectedSemester] || { settings: { startDate: '', common: {}, v3: {}, s3: {}, holidays: [] }, courses: [] };
             const currentCourses = currentSemesterData.courses || [];
-            const currentCourse = currentCourses.find(c => c.id === selectedCourseId) || null;
+            const currentCourse = currentCourses.find(c => c.id === selectedCourseId) || currentCourses[0];
             const currentTheme = THEME_COLORS.find(t => t.id === (currentCourse?.themeId || 'sky')) || THEME_COLORS[0];
+            const getHoliday = (dateKey) => (currentSemesterData.settings.holidays || []).find(h => (typeof h === 'string' ? h : h.date) === dateKey);
+            const formatDateKey = (d) => `${d.getFullYear()}-${(d.getMonth() + 1).toString().padStart(2, '0')}-${d.getDate().toString().padStart(2, '0')}`;
+            const isToday = (date) => formatDateKey(date) === formatDateKey(new Date());
 
             const openModal = (type, extra = null) => {
                 setModalType(type);
-                if (type === 'confirmDelete') setDeleteTarget(extra);
-                else if (type === 'addCourse') setFormData({ ...formData, name: '', color: 'sky', system: '技高一' });
-                else if (type === 'devicePairing') setInputSyncKey('');
+                if (type === 'classJournal') { setEditingCell({ classId: extra.cls.id, date: formatDateKey(extra.date), period: extra.period }); setEditingClassId(extra.cls.id); const existingLog = extra.cls.logs.find(l => l.date === formatDateKey(extra.date) && l.period === extra.period); const lastLog = extra.cls.logs[extra.cls.logs.length - 1] || { chapter: currentCourse.syllabus?.exam1?.[0]?.title || '', page: '1' }; setFormData({ ...formData, logChapter: existingLog ? existingLog.chapter : lastLog.chapter, logPage: existingLog ? existingLog.page : lastLog.page, logFinishedChapters: extra.cls.finishedChapters || [], logEvent: existingLog?.event || null, logEventText: existingLog?.eventText || '' }); }
+                else if (type === 'editHoliday') { const existing = getHoliday(extra); setFormData({ ...formData, holidayDate: extra, holidayDesc: existing ? existing.desc : '' }); }
+                else if (type === 'switchSemester') { setFormData({ ...formData, year: selectedYear, semester: selectedSemester, importSource: 'none' }); }
+                else if (type === 'addCourse') { setFormData({ ...formData, name: '', color: 'sky', system: '技高一' }); }
+                else if (type === 'addClass') { setFormData({ ...formData, className: '' }); }
+                else if (type === 'editSchedule') { setEditingClassId(extra); }
+                else if (type === 'semesterSettings') { setFormData({ ...formData, examData: JSON.parse(JSON.stringify(currentSemesterData.settings)) }); setActiveSettingTab('common'); setActiveExamKey(null); }
+                else if (type === 'editSyllabus') { setFormData({ ...formData, syllabusData: JSON.parse(JSON.stringify(currentCourses.find(c => c.id === extra).syllabus || DEFAULT_SYLLABUS)) }); setSelectedCourseId(extra); setExpandedSyllabusTab('exam1'); }
+                else if (type === 'devicePairing') { setInputSyncKey(''); }
+                else if (type === 'confirmDelete') { setDeleteTarget(extra); }
                 setIsModalOpen(true);
             };
 
             const handleConfirmDelete = () => {
-                const newData = { ...data };
-                const semester = newData[selectedYear][selectedSemester];
-                if (deleteTarget.type === 'course') {
-                    semester.courses = semester.courses.filter(c => c.id !== deleteTarget.id);
-                    if (selectedCourseId === deleteTarget.id) setSelectedCourseId(null);
-                } 
+                const newData = { ...data }; const semester = newData[selectedYear][selectedSemester];
+                if (deleteTarget.type === 'course') { semester.courses = semester.courses.filter(c => c.id !== deleteTarget.id); if (selectedCourseId === deleteTarget.id) setSelectedCourseId(semester.courses.length > 0 ? semester.courses[0].id : null); }
+                else if (deleteTarget.type === 'class') { const course = semester.courses.find(c => c.id === deleteTarget.courseId); if (course) course.classes = course.classes.filter(cl => cl.id !== deleteTarget.id); }
                 setData(newData); setIsModalOpen(false); setDeleteTarget(null);
             };
 
             const handleSave = () => {
-                const newData = { ...data };
+                const newData = { ...data }; 
+                if (modalType === 'switchSemester') { if (!newData[formData.year]) newData[formData.year] = {}; if (!newData[formData.year][formData.semester]) newData[formData.year][formData.semester] = { settings: { startDate: '', common: {exam1:[], exam2:[], exam3:[]}, v3: {exam1:[], exam2:[], exam3:[]}, s3: {exam1:[], exam2:[], exam3:[]}, holidays: [] }, courses: [] }; setSelectedYear(formData.year); setSelectedSemester(formData.semester); setSelectedCourseId(null); setData(newData); setIsModalOpen(false); return; }
                 const semester = newData[selectedYear][selectedSemester];
-                if (modalType === 'addCourse' && formData.name) {
-                    const newCourseId = `c-${Date.now()}`;
-                    semester.courses.push({ id: newCourseId, system: formData.system, name: formData.name, themeId: formData.color, syllabus: JSON.parse(JSON.stringify(DEFAULT_SYLLABUS)), classes: [] });
-                    setSelectedCourseId(newCourseId);
-                }
+                if (modalType === 'classJournal') { const cls = semester.courses.find(c => c.classes.some(cl => cl.id === editingCell.classId)).classes.find(cl => cl.id === editingCell.classId); cls.finishedChapters = formData.logFinishedChapters; const logEntry = { date: editingCell.date, period: editingCell.period, chapter: formData.logChapter, page: formData.logPage, event: formData.logEvent, eventText: formData.logEventText }; const existingIdx = cls.logs.findIndex(l => l.date === editingCell.date && l.period === editingCell.period); if (existingIdx >= 0) cls.logs[existingIdx] = logEntry; else cls.logs.push(logEntry); }
+                else if (modalType === 'addCourse') { if (!formData.name) return; const newId = `c-${Date.now()}`; semester.courses.push({ id: newId, system: formData.system, name: formData.name, themeId: formData.color, syllabus: JSON.parse(JSON.stringify(DEFAULT_SYLLABUS)), classes: [] }); setSelectedCourseId(newId); }
+                else if (modalType === 'addClass') { if (!formData.className) return; semester.courses.find(c => c.id === selectedCourseId).classes.push({ id: `cl-${Date.now()}`, name: formData.className, schedule: [], logs: [], finishedChapters: [] }); }
+                else if (modalType === 'editHoliday') { const f = (semester.settings.holidays || []).filter(h => (typeof h === 'string' ? h : h.date) !== formData.holidayDate); if (formData.holidayDesc.trim()) f.push({ date: formData.holidayDate, desc: formData.holidayDesc }); semester.settings.holidays = f; }
+                else if (modalType === 'semesterSettings') { semester.settings = { ...semester.settings, ...formData.examData }; }
+                else if (modalType === 'editSyllabus') { semester.courses.find(c => c.id === selectedCourseId).syllabus = JSON.parse(JSON.stringify(formData.syllabusData)); }
                 setData(newData); setIsModalOpen(false);
             };
 
-            if (!isFirebaseReady) {
-                return (
-                    <div className="h-screen flex flex-col items-center justify-center bg-slate-50 text-slate-400">
-                        <i className="ph-bold ph-cloud text-5xl mb-4 animate-pulse text-indigo-300"></i>
-                        <p className="font-bold tracking-widest text-sm">正在連線至雲端金庫...</p>
-                    </div>
-                );
-            }
+            const toggleSchedule = (dayIndex, period) => { const newData = { ...data }; const cls = newData[selectedYear][selectedSemester].courses.find(c => c.id === selectedCourseId)?.classes.find(c => c.id === editingClassId); if (cls) { const exists = cls.schedule.find(s => s.day === dayIndex && s.period === period); if (exists) cls.schedule = cls.schedule.filter(s => !(s.day === dayIndex && s.period === period)); else cls.schedule.push({ day: dayIndex, period }); setData(newData); } };
+
+            const getDayClasses = (date) => {
+                const dayIdx = date.getDay(); const dateKey = formatDateKey(date); const holidayObj = getHoliday(dateKey); const result = [];
+                currentCourses.forEach(course => {
+                    const examName = (course.system==='技高三'?currentSemesterData.settings.v3 : course.system==='綜高三'?currentSemesterData.settings.s3 : currentSemesterData.settings.common)?.exam1?.includes(dateKey) ? '段考' : null;
+                    course.classes.forEach(cls => {
+                        (cls.schedule?.filter(s => s.day === dayIdx).map(s => s.period) || []).forEach(p => {
+                            const hasLog = cls.logs?.some(l => l.date === dateKey && l.period === p);
+                            const latestLog = cls.logs?.find(l => l.date === dateKey && l.period === p);
+                            result.push({ ...cls, period: p, courseTheme: THEME_COLORS.find(t => t.id === course.themeId), hasLog, isHoliday: !!holidayObj, holidayDesc: holidayObj?.desc, isExam: !!examName, examName, logText: latestLog ? (latestLog.event ? latestLog.eventText || '活動' : `${latestLog.chapter.split(' ')[0]}(P${latestLog.page})`) : '無紀錄' });
+                        });
+                    });
+                });
+                return result.sort((a, b) => a.period - b.period);
+            };
+
+            const moveDate = (amount, unit) => { const d = new Date(currentDate); if (unit === 'week') d.setDate(d.getDate() + amount * 7); else d.setMonth(d.getMonth() + amount); setCurrentDate(d); };
+            const weekDays = useMemo(() => { const d = new Date(currentDate); const day = d.getDay(); d.setDate(d.getDate() - day + (day === 0 ? -6 : 1)); return Array.from({ length: 7 }, (_, i) => { const n = new Date(d); n.setDate(n.getDate() + i); return n; }); }, [currentDate]);
+
+            if (!isFirebaseReady) return <div className="h-screen flex flex-col items-center justify-center bg-slate-50 text-slate-400"><i className="ph-bold ph-cloud-arrow-up text-5xl mb-4 animate-pulse text-indigo-300"></i><p className="font-bold">連線雲端中...</p></div>;
 
             return (
                 <div className="flex h-screen bg-slate-50 font-sans text-slate-900 overflow-hidden">
                     {/* 側邊欄 */}
                     <div className={`fixed inset-y-0 left-0 z-30 w-64 bg-white border-r lg:static lg:translate-x-0 flex flex-col transition-transform ${isSidebarOpen ? 'translate-x-0' : '-translate-x-full'}`}>
-                        <div className="flex items-center gap-3 h-16 px-6 border-b border-slate-100 shrink-0">
-                            <i className="ph-bold ph-calendar-check text-indigo-600 text-2xl"></i>
-                            <span className="font-bold text-lg">進度同步儀</span>
-                            <button onClick={() => setIsSidebarOpen(false)} className="lg:hidden ml-auto p-1 text-slate-400"><i className="ph-bold ph-x text-xl"></i></button>
-                        </div>
-                        <div className="p-4 border-b border-slate-100 bg-slate-50/50">
-                            <div className="w-full p-3 bg-white rounded-xl border border-slate-200 shadow-sm text-sm font-bold text-slate-600 text-center">
-                                {selectedYear}學年度 {selectedSemester}
-                            </div>
-                        </div>
+                        <div className="flex items-center gap-3 h-16 px-6 border-b border-slate-100 shrink-0"><i className="ph-bold ph-calendar-check text-indigo-600 text-2xl"></i><span className="font-bold text-lg">進度同步儀</span><button onClick={() => setIsSidebarOpen(false)} className="lg:hidden ml-auto p-1"><i className="ph-bold ph-x text-xl text-slate-400"></i></button></div>
+                        <div className="p-4 border-b border-slate-100 bg-slate-50/50"><button onClick={() => openModal('switchSemester')} className="w-full p-3 bg-white rounded-xl border border-slate-200 shadow-sm text-sm font-bold flex justify-between">{selectedYear}學年 {selectedSemester} <i className="ph-bold ph-caret-down"></i></button></div>
                         <div className="flex-1 overflow-y-auto p-4">
-                            <div className="flex items-center justify-between mb-4 px-2 text-[10px] font-black text-slate-400 uppercase tracking-widest">
-                                <span>課程清單</span>
-                                <button onClick={() => openModal('addCourse')} className="p-1 hover:text-indigo-600"><i className="ph-bold ph-plus text-base"></i></button>
-                            </div>
+                            <div className="flex justify-between items-center mb-4 px-2 text-[10px] font-black text-slate-400 uppercase tracking-widest"><span>課程清單</span><button onClick={() => openModal('addCourse')} className="p-1 hover:text-indigo-600"><i className="ph-bold ph-plus text-base"></i></button></div>
                             <div className="space-y-1">
                                 {currentCourses.map(c => (
-                                    <div key={c.id} className="group">
-                                        <div className={`flex items-center justify-between px-3 py-2.5 rounded-xl transition-all cursor-pointer ${selectedCourseId === c.id ? 'bg-indigo-50 text-indigo-700 shadow-sm ring-1 ring-indigo-100' : 'text-slate-500 hover:bg-slate-50'}`}>
-                                            <button onClick={() => { setSelectedCourseId(c.id); setIsSidebarOpen(false); }} className="flex-1 flex items-center gap-3 text-left overflow-hidden">
-                                                <div className={`w-2 h-2 rounded-full shrink-0 ${THEME_COLORS.find(t=>t.id===c.themeId).base}`}></div>
-                                                <span className="font-bold text-sm truncate">{c.name}</span>
-                                            </button>
-                                            <button onClick={(e) => { e.stopPropagation(); openModal('confirmDelete', { type: 'course', id: c.id, name: c.name }); }} className="opacity-0 group-hover:opacity-100 p-1 text-slate-300 hover:text-rose-500 rounded-md transition-all">
-                                                <i className="ph-bold ph-trash text-base"></i>
-                                            </button>
+                                    <div key={c.id} className="space-y-1">
+                                        <div className={`flex items-center justify-between px-3 py-2.5 rounded-xl transition-all ${selectedCourseId === c.id ? 'bg-indigo-50 shadow-sm ring-1 ring-indigo-100' : 'hover:bg-slate-50'}`}>
+                                            <button onClick={() => setSelectedCourseId(c.id)} className="flex-1 flex items-center gap-3 text-left overflow-hidden"><div className={`w-2 h-2 rounded-full shrink-0 ${THEME_COLORS.find(t=>t.id===c.themeId).base}`}></div><span className={`font-bold text-sm truncate ${selectedCourseId===c.id?'text-indigo-700':'text-slate-600'}`}>{c.name}</span></button>
+                                            <div className="flex">
+                                                <button onClick={(e) => { e.stopPropagation(); openModal('editSyllabus', c.id); }} className="p-1.5 text-slate-300 hover:text-indigo-600"><i className="ph-bold ph-list-checks text-base"></i></button>
+                                                <button onClick={(e) => { e.stopPropagation(); openModal('confirmDelete', { type: 'course', id: c.id, name: c.name }); }} className="p-1.5 text-slate-300 hover:text-rose-500"><i className="ph-bold ph-trash text-base"></i></button>
+                                            </div>
                                         </div>
+                                        {selectedCourseId === c.id && activeMainView === 'dashboard' && (
+                                            <div className="pl-8 space-y-1 pb-2 mt-1">
+                                                {c.classes.map(cls => (
+                                                    <div key={cls.id} className="flex justify-between items-center group"><span className="text-xs font-medium text-slate-400">{cls.name}</span><div className="opacity-0 group-hover:opacity-100 flex"><button onClick={() => openModal('editSchedule', cls.id)} className="p-1 text-slate-300 hover:text-indigo-600"><i className="ph-bold ph-clock text-xs"></i></button><button onClick={() => openModal('confirmDelete', { type: 'class', id: cls.id, courseId: c.id, name: cls.name })} className="p-1 text-slate-300 hover:text-rose-500"><i className="ph-bold ph-trash text-xs"></i></button></div></div>
+                                                ))}
+                                                <button onClick={() => openModal('addClass')} className="text-[10px] font-black text-indigo-400 hover:text-indigo-600 flex items-center gap-1 mt-1"><i className="ph-bold ph-plus"></i> 新增班級</button>
+                                            </div>
+                                        )}
                                     </div>
                                 ))}
                             </div>
                         </div>
                         <div className="p-4 border-t border-slate-100 space-y-2">
-                            <button onClick={() => openModal('devicePairing')} className="w-full flex items-center justify-center gap-2 py-3 bg-indigo-50 text-indigo-600 rounded-xl text-xs font-bold border border-indigo-200 hover:bg-indigo-100 transition-all shadow-sm">
-                                <i className="ph-bold ph-device-mobile text-base"></i> 跨裝置連線
-                            </button>
+                            <button onClick={() => openModal('semesterSettings')} className="w-full py-3 bg-slate-50 text-slate-500 rounded-xl text-xs font-bold border border-dashed border-slate-300 hover:bg-slate-100 flex justify-center gap-2"><i className="ph-bold ph-stack text-sm"></i> 行事曆設定</button>
+                            <button onClick={() => openModal('devicePairing')} className="w-full py-3 bg-indigo-50 text-indigo-600 rounded-xl text-xs font-bold border border-indigo-200 hover:bg-indigo-100 flex justify-center gap-2"><i className="ph-bold ph-device-mobile text-sm"></i> 跨裝置連線</button>
                         </div>
                     </div>
 
                     {/* 主畫面 */}
-                    <div className="flex-1 flex flex-col h-screen overflow-hidden relative">
+                    <div className="flex-1 flex flex-col h-screen overflow-hidden">
                         <div className="w-full bg-white border-b px-4 lg:px-8 z-20 h-20 flex items-center justify-between shrink-0">
                             <div className="flex items-center gap-2 lg:gap-4">
                                 <button onClick={() => setIsSidebarOpen(true)} className="lg:hidden p-2 -ml-2 text-slate-600"><i className="ph-bold ph-list text-2xl"></i></button>
                                 <div className="flex bg-slate-100 p-1 rounded-xl">
-                                    <button onClick={() => setActiveMainView('dashboard')} className={`flex items-center gap-1.5 px-3 py-2 rounded-lg text-xs font-black transition-all ${activeMainView === 'dashboard' ? 'bg-white text-slate-800 shadow-sm' : 'text-slate-500 hover:text-slate-700'}`}>儀表板</button>
-                                    <button onClick={() => setActiveMainView('calendar')} className={`flex items-center gap-1.5 px-3 py-2 rounded-lg text-xs font-black transition-all ${activeMainView === 'calendar' ? 'bg-white text-slate-800 shadow-sm' : 'text-slate-500 hover:text-slate-700'}`}>行事曆</button>
+                                    <button onClick={() => setActiveMainView('dashboard')} className={`flex items-center gap-1.5 px-3 py-2 rounded-lg text-xs font-black transition-all ${activeMainView === 'dashboard' ? 'bg-white text-slate-800 shadow-sm' : 'text-slate-500 hover:text-slate-700'}`}><i className="ph-bold ph-squares-four text-base"></i> 儀表板</button>
+                                    <button onClick={() => setActiveMainView('calendar')} className={`flex items-center gap-1.5 px-3 py-2 rounded-lg text-xs font-black transition-all ${activeMainView === 'calendar' ? 'bg-white text-slate-800 shadow-sm' : 'text-slate-500 hover:text-slate-700'}`}><i className="ph-bold ph-calendar-blank text-base"></i> 行事曆</button>
                                 </div>
                                 <div className="flex items-center px-2">
                                     {user && isCloudLoaded ? <i className="ph-fill ph-cloud-check text-emerald-500 text-xl" title="雲端已同步"></i> : <i className="ph-bold ph-cloud-slash text-slate-300 text-xl animate-pulse" title="雲端連線中..."></i>}
                                 </div>
                             </div>
-                            <div className="hidden sm:block text-[10px] font-black text-slate-400 tracking-widest uppercase">{APP_VERSION}</div>
+                            <div className="flex items-center gap-4">
+                                {activeMainView === 'calendar' && (
+                                    <div className="flex items-center gap-2">
+                                        <button onClick={() => moveDate(-1, 'week')} className="p-1 hover:bg-slate-100 rounded-full"><i className="ph-bold ph-caret-left text-xl"></i></button>
+                                        <span className="text-sm font-black text-slate-800 w-24 text-center">{currentDate.getFullYear()} / {currentDate.getMonth() + 1}</span>
+                                        <button onClick={() => moveDate(1, 'week')} className="p-1 hover:bg-slate-100 rounded-full"><i className="ph-bold ph-caret-right text-xl"></i></button>
+                                    </div>
+                                )}
+                            </div>
                         </div>
 
                         <div className="flex-1 overflow-auto p-4 lg:p-8 bg-slate-50/50">
-                            <div className="max-w-5xl mx-auto h-full">
-                                {activeMainView === 'dashboard' ? (
-                                    currentCourse ? (
-                                        <div className="space-y-8 animate-in">
-                                            <div className="flex items-center gap-5 bg-white p-6 lg:p-10 rounded-[40px] shadow-sm border border-slate-100 relative overflow-hidden">
-                                                <div className={`p-5 rounded-2xl text-white shadow-lg ${currentTheme.base}`}><i className="ph-fill ph-book-open-text text-[40px]"></i></div>
-                                                <div>
-                                                    <h1 className="text-3xl font-black text-slate-800 tracking-tight">{currentCourse.system} {currentCourse.name}</h1>
-                                                    <p className="text-sm text-slate-400 font-bold mt-1">專屬課程管理儀表板</p>
+                            <div className="max-w-[1200px] mx-auto h-full">
+                                {activeMainView === 'dashboard' && currentCourse && (
+                                    <div className="space-y-8 animate-in">
+                                        <div className="flex items-center gap-5 bg-white p-6 lg:p-10 rounded-[40px] shadow-sm border border-slate-100 relative overflow-hidden">
+                                            <div className={`p-5 rounded-2xl text-white shadow-lg ${currentTheme.base}`}><i className="ph-fill ph-book-open-text text-4xl"></i></div>
+                                            <div><h1 className="text-3xl font-black text-slate-800">{currentCourse.system}{currentCourse.name}</h1><p className="text-sm font-bold text-slate-400 mt-1">管理 {currentCourse.classes?.length||0} 個班級</p></div>
+                                            <div className={`absolute top-0 right-0 w-32 h-32 opacity-5 rounded-full -mr-10 -mt-10 ${currentTheme.base}`}></div>
+                                        </div>
+                                        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+                                            {currentCourse.classes?.map(cls => (
+                                                <div key={cls.id} className="bg-white p-6 rounded-[32px] border border-slate-100 shadow-sm hover:shadow-md transition-all group">
+                                                    <div className="flex justify-between items-center mb-4"><span className="text-lg font-black text-slate-700">{cls.name}</span><button onClick={() => openModal('editSchedule', cls.id)} className="p-2 bg-slate-50 hover:text-indigo-600 rounded-xl"><i className="ph-bold ph-clock text-sm"></i></button></div>
+                                                    <div className="flex flex-wrap gap-2">{cls.schedule.length > 0 ? cls.schedule.map((s, i) => <span key={i} className={`text-xs font-black px-2 py-1 rounded-lg ${currentTheme.light} ${currentTheme.text}`}>週{WEEK_DAYS_DISPLAY[s.day]}第{s.period}節</span>) : <span className="text-xs text-slate-300 italic">尚未設定課表</span>}</div>
                                                 </div>
-                                                <div className={`absolute top-0 right-0 w-32 h-32 opacity-5 rounded-full -mr-10 -mt-10 ${currentTheme.base}`}></div>
-                                            </div>
-                                            
-                                            <div className="bg-slate-50 rounded-[32px] border-2 border-dashed border-slate-200 p-10 flex flex-col items-center justify-center gap-3 text-slate-400 font-black">
-                                                <i className="ph-fill ph-student text-5xl mb-2 opacity-50"></i>
-                                                <span>您已經成功連接 Firebase 雲端資料庫！</span>
-                                                <span className="text-xs font-bold text-slate-400">現在您可以點擊左側「跨裝置連線」，在手機上測試進度同步。</span>
-                                            </div>
+                                            ))}
+                                            <button onClick={() => openModal('addClass')} className="bg-slate-50 rounded-[32px] border-2 border-dashed border-slate-200 p-6 flex flex-col items-center justify-center gap-2 text-slate-400 font-black hover:bg-white hover:border-indigo-300 hover:text-indigo-500 transition-all min-h-[140px]"><i className="ph-bold ph-plus text-2xl"></i> 建立新班級</button>
                                         </div>
-                                    ) : (
-                                        <div className="h-full flex flex-col items-center justify-center text-slate-300 py-20 animate-in">
-                                            <i className="ph-fill ph-database text-[80px] mb-6 opacity-20"></i>
-                                            <h2 className="text-2xl font-black text-slate-400">尚未選取課程</h2>
-                                            <p className="text-sm font-bold text-slate-400 mt-2">請從左側選單點擊「+」新增，或選取一門課程開始管理</p>
+                                    </div>
+                                )}
+                                {activeMainView === 'calendar' && (
+                                    <div className="bg-white rounded-[40px] shadow-sm border border-slate-200 overflow-hidden min-w-[900px] animate-in">
+                                        <div className="grid border-b border-slate-100 bg-slate-50/50" style={{ gridTemplateColumns: '60px 2fr 2fr 2fr 2fr 2fr 1fr 1fr' }}>
+                                            <div className="p-4 flex items-center justify-center border-r"><i className="ph-bold ph-clock text-slate-400"></i></div>
+                                            {weekDays.map((d, i) => (<div key={i} className={`p-4 text-center border-r ${isToday(d)?'bg-indigo-50/50':''}`}><div className="text-[10px] font-black text-slate-400">週{WEEK_DAYS_DISPLAY[i]}</div><div className={`text-lg font-black ${isToday(d)?'text-indigo-600':''}`}>{d.getDate()}</div></div>))}
                                         </div>
-                                    )
-                                ) : (
-                                    <div className="h-full flex flex-col items-center justify-center bg-white rounded-[40px] border border-slate-100 shadow-sm animate-in">
-                                        <i className="ph-fill ph-calendar-blank text-[80px] text-slate-200 mb-6"></i>
-                                        <h2 className="text-2xl font-black text-slate-400">行事曆視圖已就緒</h2>
-                                        <p className="text-sm font-bold text-slate-400 mt-2">正式上線後，您可以在這裡查看各班詳細的進度落點與課表。</p>
+                                        {PERIODS.map(p => (
+                                            <div key={p} className="grid border-b border-slate-100" style={{ gridTemplateColumns: '60px 2fr 2fr 2fr 2fr 2fr 1fr 1fr' }}>
+                                                <div className="border-r flex items-center justify-center text-[11px] font-black text-slate-400 bg-slate-50/30">第{p}節</div>
+                                                {weekDays.map((d, i) => {
+                                                    const classes = getDayClasses(d).filter(c => c.period === p);
+                                                    return (
+                                                        <div key={i} className="p-2 border-r min-h-[90px] relative hover:bg-slate-50/50 transition-colors">
+                                                            {classes.map(cls => (
+                                                                <button key={cls.id} onClick={() => openModal('classJournal', {cls, date: d, period: p})} className={`w-full p-3 rounded-[16px] text-left border mb-1 last:mb-0 ${cls.hasLog?'bg-sky-50 border-sky-100':'bg-white border-slate-100 hover:shadow-md'}`}>
+                                                                    <div className={`font-black text-sm ${cls.courseTheme.text}`}>{cls.name}</div>
+                                                                    <div className="text-[11px] font-bold text-slate-500 truncate mt-1">{cls.hasLog ? '今日: ' : '上次: '}{cls.logText}</div>
+                                                                </button>
+                                                            ))}
+                                                        </div>
+                                                    );
+                                                })}
+                                            </div>
+                                        ))}
                                     </div>
                                 )}
                             </div>
@@ -303,71 +292,14 @@
                     {isModalOpen && (
                         <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-md z-50 flex items-center justify-center p-4">
                             <div className="bg-white rounded-[48px] shadow-2xl w-full max-w-md overflow-hidden animate-in">
-                                <div className="px-10 py-6 bg-slate-50 border-b border-slate-100 flex items-center justify-between">
-                                    <h3 className="font-black text-slate-800 uppercase tracking-tight">{modalType === 'addCourse' ? '新增教學課程' : modalType === 'confirmDelete' ? '⚠ 刪除確認' : '跨裝置同步中樞'}</h3>
-                                    <button onClick={() => setIsModalOpen(false)} className="p-2 hover:bg-white rounded-xl text-slate-400 transition-colors"><i className="ph-bold ph-x text-xl"></i></button>
-                                </div>
-                                <div className="p-10">
-                                    {modalType === 'addCourse' && (
-                                        <div className="space-y-6">
-                                            <div className="space-y-4">
-                                                <input type="text" value={formData.name} onChange={(e)=>setFormData({...formData, name:e.target.value})} className="w-full p-4 bg-slate-50 rounded-2xl border-2 border-slate-100 font-bold outline-none focus:border-indigo-400 transition-all" placeholder="科目名稱，如: 基礎物理B" />
-                                                <select value={formData.system} onChange={(e)=>setFormData({...formData, system:e.target.value})} className="w-full p-4 bg-slate-50 rounded-2xl border-2 border-slate-100 font-bold outline-none">
-                                                    {['技高一','技高二','技高三','綜高一','綜高二','綜高三'].map(s => <option key={s} value={s}>{s}</option>)}
-                                                </select>
-                                                <div className="flex justify-center gap-2">
-                                                    {THEME_COLORS.map(c => (
-                                                        <button key={c.id} onClick={()=>setFormData({...formData, color:c.id})} className={`w-8 h-8 rounded-full ${c.base} transition-all ${formData.color === c.id ? 'ring-4 ring-slate-200 scale-110' : 'opacity-40 hover:opacity-100'}`} />
-                                                    ))}
-                                                </div>
-                                            </div>
-                                            <button onClick={handleSave} className="w-full py-4 bg-indigo-600 text-white font-black rounded-2xl shadow-xl shadow-indigo-100 hover:bg-indigo-700 transition-all active:scale-95">確認建立</button>
-                                        </div>
-                                    )}
-                                    {modalType === 'confirmDelete' && deleteTarget && (
-                                        <div className="text-center space-y-6">
-                                            <i className="ph-fill ph-warning-circle text-rose-500 text-6xl mx-auto animate-pulse"></i>
-                                            <div>
-                                                <h4 className="text-xl font-black text-slate-800">確定要刪除「{deleteTarget.name}」嗎？</h4>
-                                                <p className="text-sm font-bold text-rose-400 mt-2">⚠️ 資料將從雲端同步抹除，且無法還原。</p>
-                                            </div>
-                                            <div className="flex gap-3">
-                                                <button onClick={() => setIsModalOpen(false)} className="flex-1 py-4 bg-slate-100 text-slate-500 font-black rounded-2xl hover:bg-slate-200 transition-all">取消</button>
-                                                <button onClick={handleConfirmDelete} className="flex-1 py-4 bg-rose-500 text-white font-black rounded-2xl shadow-xl shadow-rose-100 hover:bg-rose-600 transition-all">我確定，刪除</button>
-                                            </div>
-                                        </div>
-                                    )}
-                                    {modalType === 'devicePairing' && (
-                                        <div className="space-y-8">
-                                            <div className="text-center">
-                                                <div className="p-6 bg-indigo-50 rounded-[32px] border border-indigo-100 relative">
-                                                    <p className="text-[10px] font-black text-indigo-400 mb-3 uppercase tracking-widest">本機同步金鑰</p>
-                                                    <div className="flex items-center justify-center gap-3">
-                                                        <span className="text-3xl font-black text-indigo-700 tracking-[0.2em] relative z-10">{syncKey}</span>
-                                                        <button onClick={() => { 
-                                                            const el = document.createElement('textarea');
-                                                            el.value = syncKey;
-                                                            document.body.appendChild(el);
-                                                            el.select();
-                                                            document.execCommand('copy');
-                                                            document.body.removeChild(el);
-                                                            alert("✅ 鑰匙已複製！");
-                                                        }} className="p-2 hover:bg-white rounded-xl text-indigo-400 shadow-sm transition-all active:scale-90 relative z-10">
-                                                            <i className="ph-bold ph-copy text-xl"></i>
-                                                        </button>
-                                                    </div>
-                                                    <i className="ph-fill ph-key absolute -bottom-2 -right-2 text-[60px] text-indigo-100 opacity-50"></i>
-                                                </div>
-                                                <p className="text-xs font-bold text-slate-400 mt-6 leading-relaxed">在手機或其他裝置輸入此金鑰，<br/>即可達成「量子糾纏」般的即時同步。</p>
-                                            </div>
-                                            <div className="pt-6 border-t border-slate-100">
-                                                <div className="flex gap-2">
-                                                    <input type="text" value={inputSyncKey} onChange={(e)=>setInputSyncKey(e.target.value.toUpperCase())} placeholder="PHY-XXXXX" className="flex-1 p-4 bg-slate-50 border-2 border-slate-100 rounded-2xl font-black text-center tracking-widest uppercase focus:border-indigo-400 outline-none transition-all" />
-                                                    <button onClick={() => { if(inputSyncKey.length > 3){ setSyncKey(inputSyncKey); localStorage.setItem('physics_sync_key', inputSyncKey); setIsModalOpen(false); } }} className="px-6 bg-slate-800 text-white rounded-2xl font-black hover:bg-slate-900 transition-all">連線</button>
-                                                </div>
-                                            </div>
-                                        </div>
-                                    )}
+                                <div className="px-8 py-6 bg-slate-50 border-b flex items-center justify-between"><h3 className="font-black text-slate-800 uppercase">{modalType==='addCourse'?'新增課程':modalType==='addClass'?'新增班級':modalType==='editSchedule'?'設定課表':modalType==='classJournal'?'教學日誌':modalType==='devicePairing'?'跨裝置同步':'系統設定'}</h3><button onClick={()=>setIsModalOpen(false)}><i className="ph-bold ph-x text-xl text-slate-400"></i></button></div>
+                                <div className="p-8 max-h-[70vh] overflow-y-auto">
+                                    {modalType === 'addCourse' && (<div className="space-y-4"><input type="text" value={formData.name} onChange={(e)=>setFormData({...formData, name:e.target.value})} className="w-full p-4 bg-slate-50 rounded-2xl border-2 border-slate-100 font-bold" placeholder="科目名稱，如: 物理B" /><button onClick={handleSave} className="w-full py-4 bg-indigo-600 text-white font-black rounded-2xl">確認新增</button></div>)}
+                                    {modalType === 'addClass' && (<div className="space-y-4"><input type="text" value={formData.className} onChange={(e)=>setFormData({...formData, className:e.target.value})} className="w-full p-4 bg-slate-50 rounded-2xl border-2 border-slate-100 font-bold" placeholder="班級名稱，如: 電一智" /><button onClick={handleSave} className="w-full py-4 bg-indigo-600 text-white font-black rounded-2xl">確認新增</button></div>)}
+                                    {modalType === 'confirmDelete' && (<div className="text-center space-y-6"><i className="ph-fill ph-warning-circle text-rose-500 text-6xl mx-auto animate-pulse"></i><h4 className="text-lg font-black">確定刪除「{deleteTarget?.name}」？</h4><button onClick={handleConfirmDelete} className="w-full py-4 bg-rose-500 text-white font-black rounded-2xl">我確定，刪除</button></div>)}
+                                    {modalType === 'devicePairing' && (<div className="space-y-6"><div className="p-6 bg-indigo-50 rounded-[32px] text-center"><p className="text-[10px] font-black text-indigo-400 mb-2">本機同步金鑰</p><div className="flex justify-center gap-3"><span className="text-3xl font-black text-indigo-700 tracking-widest">{syncKey}</span></div></div><div className="flex gap-2"><input type="text" value={inputSyncKey} onChange={(e)=>setInputSyncKey(e.target.value.toUpperCase())} placeholder="PHY-XXXXX" className="flex-1 p-4 bg-slate-50 border-2 rounded-2xl font-black text-center tracking-widest uppercase" /><button onClick={() => { if(inputSyncKey.length > 3){ setSyncKey(inputSyncKey); setIsModalOpen(false); } }} className="px-6 bg-slate-800 text-white rounded-2xl font-black">連線</button></div></div>)}
+                                    {modalType === 'classJournal' && (<div className="space-y-4"><label className="block text-xs font-black text-slate-400 text-center">填寫 {editingCell?.date} 第{editingCell?.period}節 進度</label><input type="text" value={formData.logChapter} onChange={(e)=>setFormData({...formData, logChapter:e.target.value})} className="w-full p-4 bg-slate-50 rounded-2xl border-2 font-bold text-center" placeholder="章節名稱 (例如: 1-1 物理學)"/><input type="number" value={formData.logPage} onChange={(e)=>setFormData({...formData, logPage:e.target.value})} className="w-full p-4 bg-slate-50 rounded-2xl border-2 font-black text-center text-xl" placeholder="頁數"/><button onClick={handleSave} className="w-full py-4 bg-emerald-500 text-white font-black rounded-2xl shadow-xl flex justify-center gap-2"><i className="ph-bold ph-check-circle text-xl"></i> 儲存進度</button></div>)}
+                                    {modalType === 'editSchedule' && (<div className="space-y-4 overflow-x-auto"><div className="grid grid-cols-6 gap-1 min-w-[300px]"><div/>{['一','二','三','四','五'].map(d=><div key={d} className="text-center text-[10px] font-black text-slate-400">週{d}</div>)}{PERIODS.map(p=>(<React.Fragment key={p}><div className="flex items-center justify-center text-[10px] font-bold text-slate-400">第{p}節</div>{[1,2,3,4,5].map(dIdx=>{ const isSel = currentCourse?.classes.find(c=>c.id===editingClassId)?.schedule.some(s=>s.day===dIdx&&s.period===p); return <button key={`${dIdx}-${p}`} onClick={()=>toggleSchedule(dIdx, p)} className={`h-10 rounded-lg border-2 transition-all ${isSel?'bg-indigo-600 border-indigo-600 text-white':'bg-slate-50 border-slate-100'}`}>{isSel?<i className="ph-bold ph-plus"></i>:null}</button> })}</React.Fragment>))}</div></div>)}
                                 </div>
                             </div>
                         </div>
