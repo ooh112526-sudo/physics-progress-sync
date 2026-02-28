@@ -197,13 +197,21 @@
                 return `${selectedYear}/${parts[1]}/${dateArr.map(d => d.split('-')[2]).join('、')}`;
             };
 
+            // 🌟 核心修復 1：強制在地化時區解析引擎，奪回被 UTC 吃掉的開學第一天
+            const parseDateLocal = (dateStr) => {
+                if (!dateStr) return new Date();
+                const [y, m, d] = dateStr.split('-');
+                return new Date(y, parseInt(m, 10) - 1, parseInt(d, 10));
+            };
+
             const healthData = useMemo(() => {
                 if (!currentCourse || !currentSemesterData.settings.startDate) return {};
                 
                 const realToday = new Date(); 
                 realToday.setHours(0,0,0,0);
                 
-                const startDate = new Date(currentSemesterData.settings.startDate);
+                // 改用在地化時區解析
+                const startDate = parseDateLocal(currentSemesterData.settings.startDate);
                 let snapshotDate = new Date(realToday);
                 
                 const diffTime = realToday - startDate;
@@ -222,15 +230,50 @@
 
                 currentCourse.classes.forEach(cls => {
                     let remainingPeriods = 0;
+                    let totalPeriods = 0; // 🌟 新增變數：用來記錄該次段考的「總法定排課數」
                     let track = (currentCourse.system === '技高三' ? 'v3' : (currentCourse.system === '綜高三' ? 's3' : 'common'));
                     const trackData = currentSemesterData.settings[track] || {};
                     const allExamDates = [...(trackData.exam1 || []), ...(trackData.exam2 || []), ...(trackData.exam3 || [])].sort();
 
                     let nextExamDateStr = null;
-                    for (const d of allExamDates) { if (d >= snapshotStr) { nextExamDateStr = d; break; } }
+                    let lastExamDateStr = null;
+                    
+                    // 找出「下一次段考」與「上一次段考」的時間邊界
+                    for (const d of allExamDates) { 
+                        if (d >= snapshotStr) { 
+                            if (!nextExamDateStr) nextExamDateStr = d; 
+                        } else {
+                            lastExamDateStr = d;
+                        }
+                    }
 
                     if (nextExamDateStr) {
-                        const endDate = new Date(nextExamDateStr); endDate.setHours(0,0,0,0);
+                        // 🌟 核心引擎 2：計算「總共 X 節」
+                        let periodStartStr = currentSemesterData.settings.startDate;
+                        if (lastExamDateStr) {
+                            const tempD = parseDateLocal(lastExamDateStr);
+                            tempD.setDate(tempD.getDate() + 1); // 總節數從「上次段考隔天」開始算
+                            periodStartStr = formatDateKey(tempD);
+                        }
+                        if (periodStartStr < currentSemesterData.settings.startDate) {
+                            periodStartStr = currentSemesterData.settings.startDate;
+                        }
+
+                        const pStart = parseDateLocal(periodStartStr);
+                        const pEnd = parseDateLocal(nextExamDateStr);
+                        
+                        // 模擬該段考區間的每一天，算出總排課節數 (已扣除國定假日、段考日、週末)
+                        for (let d = new Date(pStart); d < pEnd; d.setDate(d.getDate() + 1)) {
+                            const dStr = formatDateKey(d); 
+                            const dayOfWeek = d.getDay();
+                            if (dayOfWeek === 0 || dayOfWeek === 6 || getHoliday(dStr) || getExamName(dStr, currentCourse.system, currentSemesterData.settings)) continue;
+                            
+                            const scheds = cls.schedule?.filter(s => s.day === dayOfWeek) || [];
+                            totalPeriods += scheds.length;
+                        }
+
+                        // 🌟 計算「剩餘 n 節」 (維持原本快照邏輯，確保班級間比較基礎公平)
+                        const endDate = parseDateLocal(nextExamDateStr);
                         globalDaysToExam = Math.ceil((endDate - realToday) / (1000 * 60 * 60 * 24));
                         for (let d = new Date(snapshotDate); d < endDate; d.setDate(d.getDate() + 1)) {
                             const dStr = formatDateKey(d); const dayOfWeek = d.getDay();
@@ -239,11 +282,14 @@
                             scheds.forEach(s => { const existingLog = cls.logs?.find(l => l.date === dStr && l.period === s.period); if (!existingLog || !existingLog.event) remainingPeriods++; });
                         }
                     }
-                    classPeriods[cls.id] = remainingPeriods; if (remainingPeriods > maxPeriods) maxPeriods = remainingPeriods;
+                    classPeriods[cls.id] = { remaining: remainingPeriods, total: totalPeriods }; 
+                    if (remainingPeriods > maxPeriods) maxPeriods = remainingPeriods;
                 });
 
                 currentCourse.classes.forEach(cls => {
-                    const periods = classPeriods[cls.id]; const delta = maxPeriods - periods;
+                    const periods = classPeriods[cls.id]?.remaining || 0; 
+                    const totalPeriods = classPeriods[cls.id]?.total || 0;
+                    const delta = maxPeriods - periods;
                     let status = 'green', colorClass = 'bg-emerald-400', textClass = 'text-emerald-500', barBgClass = 'bg-emerald-50 text-emerald-600 border border-emerald-200', msg = '進度完美同步';
                     if (delta >= 3) {
                         status = 'red'; const isUrgent = globalDaysToExam < 21 && globalDaysToExam > 0;
@@ -252,7 +298,7 @@
                     } else if (delta === 2) { status = 'yellow'; colorClass = 'bg-amber-400'; textClass = 'text-amber-600'; barBgClass = 'bg-amber-50 text-amber-600 border border-amber-200'; msg = `微幅脫節 2 節`; } 
                     else if (delta === 1) { msg = `微幅落後 1 節`; textClass = 'text-teal-600'; colorClass = 'bg-teal-400'; barBgClass = 'bg-teal-50 text-teal-600 border border-teal-200'; }
                     const percentage = maxPeriods > 0 ? (periods / maxPeriods) * 100 : 0;
-                    result[cls.id] = { periods, delta, status, colorClass, textClass, barBgClass, msg, percentage, daysToExam: globalDaysToExam };
+                    result[cls.id] = { periods, totalPeriods, delta, status, colorClass, textClass, barBgClass, msg, percentage, daysToExam: globalDaysToExam };
                 });
                 return result;
             }, [currentCourse, currentSemesterData.settings]); 
@@ -612,7 +658,7 @@
 
                                             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
                                                 {currentCourse.classes?.map(cls => {
-                                                    const health = healthData[cls.id] || { periods: '?', colorClass: 'bg-slate-200', textClass: 'text-slate-900', barBgClass: 'bg-slate-100 text-slate-500', percentage: 0, msg: '尚未結算' };
+                                                    const health = healthData[cls.id] || { periods: '?', totalPeriods: '?', colorClass: 'bg-slate-200', textClass: 'text-slate-900', barBgClass: 'bg-slate-100 text-slate-500', percentage: 0, msg: '尚未結算' };
                                                     return (
                                                     <div key={cls.id} className="bg-white p-6 rounded-[32px] border border-slate-100 shadow-sm hover:shadow-md transition-all group">
                                                         <div className="flex justify-between items-center mb-4"><span className="text-lg font-black text-slate-700">{cls.name}</span><button onClick={() => openModal('editSchedule', cls.id)} className="p-2 bg-slate-50 hover:text-indigo-600 rounded-xl"><i className="ph-bold ph-clock text-sm"></i></button></div>
@@ -622,7 +668,23 @@
                                                                 : <span className="text-xs text-slate-300 italic">尚未設定課表</span>
                                                             }
                                                         </div>
-                                                        <div className="pt-4 border-t border-slate-50 flex justify-between items-end"><div className="flex-1"><div className="flex justify-between items-center mb-2"><div className="flex items-center gap-2"><span className="text-slate-400 font-black text-[14px] uppercase tracking-widest">剩餘可用</span><span className={`text-[10px] font-bold px-2 py-0.5 rounded-full ${health.barBgClass}`}>{health.msg}</span></div><span className={`text-xl font-black ${health.textClass}`}>{health.periods} <span className="text-sm">節</span></span></div><div className="h-2 w-full bg-slate-100 rounded-full overflow-hidden"><div className={`h-full transition-all duration-1000 ${health.colorClass}`} style={{ width: `${health.percentage}%` }}></div></div></div></div>
+                                                        {/* 🌟 UI 更新：將卡片底部文字替換為「本段考區間」，並加入總節數顯示 */}
+                                                        <div className="pt-4 border-t border-slate-50 flex justify-between items-end">
+                                                            <div className="flex-1">
+                                                                <div className="flex justify-between items-center mb-2">
+                                                                    <div className="flex items-center gap-2">
+                                                                        <span className="text-slate-400 font-black text-[14px] uppercase tracking-widest">本段考區間</span>
+                                                                        <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full ${health.barBgClass}`}>{health.msg}</span>
+                                                                    </div>
+                                                                    <span className={`text-xl font-black ${health.textClass}`}>
+                                                                        剩 {health.periods} <span className="text-sm opacity-60">/ 共{health.totalPeriods}節</span>
+                                                                    </span>
+                                                                </div>
+                                                                <div className="h-2 w-full bg-slate-100 rounded-full overflow-hidden">
+                                                                    <div className={`h-full transition-all duration-1000 ${health.colorClass}`} style={{ width: `${health.percentage}%` }}></div>
+                                                                </div>
+                                                            </div>
+                                                        </div>
                                                     </div>
                                                 )})}
                                                 <button onClick={() => openModal('addClass')} className="bg-slate-50 rounded-[32px] border-2 border-dashed border-slate-200 p-6 flex flex-col items-center justify-center gap-2 text-slate-400 font-black hover:bg-white hover:border-indigo-300 hover:text-indigo-500 transition-all min-h-[140px]"><i className="ph-bold ph-plus text-2xl"></i> 建立新班級</button>
