@@ -10,30 +10,30 @@
     <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
     <!-- 引入 Tailwind CSS (美化) -->
     <script src="https://cdn.tailwindcss.com"></script>
-    <!-- 修正：引入與 React 相容的 Lucide React 庫 -->
-    <script src="https://unpkg.com/lucide-react"></script>
+    <!-- 引入與 React 相容的 Lucide 圖示庫 -->
+    <script src="https://unpkg.com/lucide-react@0.292.0/dist/umd/lucide-react.min.js"></script>
     
     <style>
-        /* 隱藏未編譯前的原始內容 */
-        [v-cloak] { display: none; }
         body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif; }
-        /* 自訂動畫 */
-        .animate-in { animation: fadeIn 0.5s ease-out; }
+        .animate-in { animation: fadeIn 0.3s ease-out; }
         @keyframes fadeIn { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: translateY(0); } }
+        /* 隱藏滾動條但保留功能 */
+        ::-webkit-scrollbar { width: 6px; height: 6px; }
+        ::-webkit-scrollbar-track { background: transparent; }
+        ::-webkit-scrollbar-thumb { background: #cbd5e1; border-radius: 10px; }
+        ::-webkit-scrollbar-thumb:hover { background: #94a3b8; }
     </style>
 </head>
 <body class="bg-slate-50">
     <div id="root"></div>
 
-    <!-- Firebase 模組載入 -->
+    <!-- ☁️ 雲端金庫連線模組 -->
     <script type="module">
         import { initializeApp } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-app.js";
         import { getAuth, signInAnonymously, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-auth.js";
         import { getFirestore, doc, setDoc, onSnapshot } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-firestore.js";
 
-        // ============================================================
-        // 🛠️ 自動注入區：這是您提供的專屬雲端金庫鑰匙
-        // ============================================================
+        // 老師您的專屬金鑰 (已鎔鑄)
         const firebaseConfig = {
             apiKey: "AIzaSyBduUmDpYh6lv8v-86Tmiay_8xe2dPmehI",
             authDomain: "physics-sync-2026.firebaseapp.com",
@@ -42,38 +42,62 @@
             messagingSenderId: "260212941427",
             appId: "1:260212941427:web:40a7d9eefbd79cf5fcc006"
         };
-        const app = initializeApp(firebaseConfig);
-        const auth = getAuth(app);
-        const db = getFirestore(app);
-        const currentAppId = "physics-sync-2026";
-        // ============================================================
+        
+        try {
+            const app = initializeApp(firebaseConfig);
+            const auth = getAuth(app);
+            const db = getFirestore(app);
+            const currentAppId = "physics-sync-2026";
 
-        // 將 Firebase 實體掛載到 window，讓 Babel 內的 React 可以存取
-        window.firebase = { auth, db, currentAppId, signInAnonymously, onAuthStateChanged, doc, setDoc, onSnapshot };
+            // 將工具打包給 React 引擎使用
+            window.firebase = { auth, db, currentAppId, signInAnonymously, onAuthStateChanged, doc, setDoc, onSnapshot };
+            
+            // 發送綠燈訊號：雲端管線已接通！
+            window.firebaseReady = true;
+            window.dispatchEvent(new Event('firebaseReady'));
+        } catch (error) {
+            console.error("Firebase 連線初始化失敗:", error);
+        }
     </script>
 
-    <!-- React 應用程式邏輯 -->
+    <!-- 🚀 系統核心大腦 (React) -->
     <script type="text/babel">
         const { useState, useEffect, useMemo } = React;
-        // 修正：從 LucideReact 全域變數中結構出元件
+        // 確保精確載入小寫的 lucideReact 字典
         const { 
-            Book, Plus, Trash2, Menu, X, Calendar, ChevronDown, Clock, AlertCircle, 
-            ChevronLeft, ChevronRight, CheckCircle2, LayoutDashboard, Smartphone, Key, Cloud, CloudOff, Copy, Database 
-        } = LucideReact;
+            Book, Users, Plus, Edit2, Trash2, Menu, X, Calendar, ChevronDown, Minus, Clock, ShieldAlert, AlertCircle, Flag, ChevronLeft, ChevronRight, Layers, CheckCircle2, ListChecks, ArrowLeft, Palmtree, LayoutDashboard, CalendarDays, ArrowUp, ArrowDown, Copy, Download, Upload, Database, Cloud, CloudOff, Smartphone, Key 
+        } = window.lucideReact;
 
+        const APP_VERSION = "v8.2.1 (正式生產線版)";
+        
         const THEME_COLORS = [
-            { id: 'sky', name: '晴空水藍', base: 'bg-sky-400', light: 'bg-sky-50', text: 'text-sky-800' },
-            { id: 'teal', name: '沁涼薄荷', base: 'bg-teal-400', light: 'bg-teal-50', text: 'text-teal-800' },
-            { id: 'fuchsia', name: '丁香淺紫', base: 'bg-fuchsia-400', light: 'bg-fuchsia-50', text: 'text-fuchsia-800' },
-            { id: 'rose', name: '蜜桃粉橘', base: 'bg-rose-400', light: 'bg-rose-50', text: 'text-rose-800' },
-            { id: 'amber', name: '奶油暖黃', base: 'bg-amber-400', light: 'bg-amber-50', text: 'text-amber-800' }
+            { id: 'sky', name: '晴空水藍', h: 199, s: 89, base: 'bg-sky-400', light: 'bg-sky-50', text: 'text-sky-800' },
+            { id: 'teal', name: '沁涼薄荷', h: 174, s: 86, base: 'bg-teal-400', light: 'bg-teal-50', text: 'text-teal-800' },
+            { id: 'fuchsia', name: '丁香淺紫', h: 298, s: 70, base: 'bg-fuchsia-400', light: 'bg-fuchsia-50', text: 'text-fuchsia-800' },
+            { id: 'rose', name: '蜜桃粉橘', h: 350, s: 89, base: 'bg-rose-400', light: 'bg-rose-50', text: 'text-rose-800' },
+            { id: 'amber', name: '奶油暖黃', h: 45, s: 93, base: 'bg-amber-400', light: 'bg-amber-50', text: 'text-amber-800' }
         ];
 
+        const WEEK_DAYS_DISPLAY = ['一', '二', '三', '四', '五', '六', '日'];
+        const PERIODS = [1, 2, 3, 4, 5, 6, 7, 8];
+
+        const DEFAULT_SYLLABUS = {
+            exam1: [{ title: "1-1 物理學的發展", pages: 0 }, { title: "1-2 物理量單位", pages: 0 }],
+            exam2: [{ title: "2-1 速度", pages: 0 }, { title: "2-2 加速度", pages: 0 }],
+            exam3: [{ title: "3-1 牛頓定律", pages: 0 }]
+        };
+
         const initialData = {
-            "114": { "下學期": { settings: { startDate: "2026-02-11", holidays: [] }, courses: [] } }
+            "114": {
+                "下學期": {
+                    settings: { startDate: "2026-02-11", common: { exam1: [], exam2: [], exam3: [] }, v3: { exam1: [], exam2: [], exam3: [] }, s3: { exam1: [], exam2: [], exam3: [] }, holidays: [] },
+                    courses: []
+                }
+            }
         };
 
         function App() {
+            const [isFirebaseReady, setIsFirebaseReady] = useState(window.firebaseReady || false);
             const [user, setUser] = useState(null);
             const [isCloudLoaded, setIsCloudLoaded] = useState(false);
             const [syncKey, setSyncKey] = useState(() => {
@@ -83,25 +107,29 @@
                 localStorage.setItem('physics_sync_key', newKey);
                 return newKey;
             });
+            const [inputSyncKey, setInputSyncKey] = useState(''); 
             const [data, setData] = useState(initialData);
 
-            // ☁️ 雲端狀態與同步
+            // 🟢 等待 Firebase 綠燈
             useEffect(() => {
-                const initFirebase = async () => {
-                    if (!window.firebase) return;
-                    const { auth, signInAnonymously, onAuthStateChanged } = window.firebase;
-                    try {
-                        await signInAnonymously(auth);
-                        onAuthStateChanged(auth, setUser);
-                    } catch (err) {
-                        console.error("Auth Fail:", err);
-                    }
-                };
-                initFirebase();
+                const handleReady = () => setIsFirebaseReady(true);
+                window.addEventListener('firebaseReady', handleReady);
+                return () => window.removeEventListener('firebaseReady', handleReady);
             }, []);
 
+            // ☁️ 身分驗證 (等待綠燈後執行)
             useEffect(() => {
-                if (!user || !syncKey || !window.firebase) return;
+                if (!isFirebaseReady || !window.firebase) return;
+                const { auth, signInAnonymously, onAuthStateChanged } = window.firebase;
+                
+                signInAnonymously(auth).catch(err => console.error("登入失敗:", err));
+                const unsubscribe = onAuthStateChanged(auth, setUser);
+                return () => unsubscribe();
+            }, [isFirebaseReady]);
+
+            // ☁️ 雲端即時同步 (onSnapshot)
+            useEffect(() => {
+                if (!user || !syncKey || !isFirebaseReady || !window.firebase) return; 
                 const { db, currentAppId, doc, onSnapshot, setDoc } = window.firebase;
                 const docRef = doc(db, 'artifacts', currentAppId, 'public', 'data', 'shared_progress', syncKey);
 
@@ -110,147 +138,192 @@
                         const serverData = docSnap.data().appData;
                         setData(prev => (JSON.stringify(prev) === JSON.stringify(serverData) ? prev : serverData));
                     } else {
-                        setDoc(docRef, { appData: data }, { merge: true });
+                        setDoc(docRef, { appData: data }, { merge: true }).catch(() => {});
                     }
                     setIsCloudLoaded(true);
-                }, (err) => {
-                    console.error("Snapshot Error:", err);
-                    setIsCloudLoaded(false);
+                }, (error) => {
+                    console.error("雲端連線失敗:", error);
+                    setIsCloudLoaded(true);
                 });
                 return () => unsubscribe();
-            }, [user, syncKey]);
+            }, [user, syncKey, isFirebaseReady]); 
 
+            // ☁️ 自動存檔至雲端
             useEffect(() => {
-                if (!user || !isCloudLoaded || !window.firebase) return;
+                if (!user || !isCloudLoaded || !syncKey || !window.firebase) return;
                 const { db, currentAppId, doc, setDoc } = window.firebase;
                 const docRef = doc(db, 'artifacts', currentAppId, 'public', 'data', 'shared_progress', syncKey);
-                setDoc(docRef, { appData: data }, { merge: true }).catch(err => console.error("Save Error:", err));
-            }, [data, user, isCloudLoaded]);
+                setDoc(docRef, { appData: data }, { merge: true }).catch(err => console.error("存檔失敗", err));
+            }, [data, user, isCloudLoaded, syncKey]);
 
-            // --- UI 狀態 ---
+            // --- UI 狀態控制 ---
+            const [selectedYear, setSelectedYear] = useState("114");
+            const [selectedSemester, setSelectedSemester] = useState("下學期");
             const [selectedCourseId, setSelectedCourseId] = useState(null);
+            const [activeMainView, setActiveMainView] = useState('dashboard');
+            const [calendarViewMode, setCalendarViewMode] = useState('week'); 
+            const [currentDate, setCurrentDate] = useState(new Date()); 
+            const [isSidebarOpen, setIsSidebarOpen] = useState(false);
             const [isModalOpen, setIsModalOpen] = useState(false);
-            const [modalType, setModalType] = useState('');
-            const [deleteTarget, setDeleteTarget] = useState(null);
-            const [formData, setFormData] = useState({ name: '', system: '技高一', color: 'sky' });
+            const [modalType, setModalType] = useState(''); 
+            const [deleteTarget, setDeleteTarget] = useState(null); 
+            const [formData, setFormData] = useState({ system: '技高一', name: '', color: 'sky', className: '' });
 
-            const currentCourses = data["114"]["下學期"].courses || [];
+            const currentSemesterData = data[selectedYear]?.[selectedSemester] || { settings: { startDate: '', common: {}, v3: {}, s3: {}, holidays: [] }, courses: [] };
+            const currentCourses = currentSemesterData.courses || [];
             const currentCourse = currentCourses.find(c => c.id === selectedCourseId) || null;
             const currentTheme = THEME_COLORS.find(t => t.id === (currentCourse?.themeId || 'sky')) || THEME_COLORS[0];
+            
+            const formatDateKey = (date) => `${date.getFullYear()}-${(date.getMonth() + 1).toString().padStart(2, '0')}-${date.getDate().toString().padStart(2, '0')}`;
+            const isToday = (date) => formatDateKey(date) === formatDateKey(new Date());
+            const getHoliday = (dateKey) => (currentSemesterData.settings.holidays || []).find(h => (typeof h === 'string' ? h : h.date) === dateKey);
+
+            const openModal = (type, extra = null) => {
+                setModalType(type);
+                if (type === 'confirmDelete') setDeleteTarget(extra);
+                else if (type === 'addCourse') setFormData({ ...formData, name: '', color: 'sky', system: '技高一' });
+                else if (type === 'devicePairing') setInputSyncKey('');
+                setIsModalOpen(true);
+            };
+
+            const handleConfirmDelete = () => {
+                const newData = { ...data };
+                const semester = newData[selectedYear][selectedSemester];
+                if (deleteTarget.type === 'course') {
+                    semester.courses = semester.courses.filter(c => c.id !== deleteTarget.id);
+                    if (selectedCourseId === deleteTarget.id) setSelectedCourseId(null);
+                } else if (deleteTarget.type === 'class') {
+                    const course = semester.courses.find(c => c.id === deleteTarget.courseId);
+                    if (course) course.classes = course.classes.filter(cl => cl.id !== deleteTarget.id);
+                }
+                setData(newData); setIsModalOpen(false); setDeleteTarget(null);
+            };
 
             const handleSave = () => {
                 const newData = { ...data };
+                const semester = newData[selectedYear][selectedSemester];
                 if (modalType === 'addCourse' && formData.name) {
-                    const newCourse = {
-                        id: 'c-' + Date.now(),
-                        name: formData.name,
-                        system: formData.system,
-                        themeId: formData.color,
-                        classes: []
-                    };
-                    newData["114"]["下學期"].courses.push(newCourse);
-                    setSelectedCourseId(newCourse.id);
+                    const newCourseId = `c-${Date.now()}`;
+                    semester.courses.push({ id: newCourseId, system: formData.system, name: formData.name, themeId: formData.color, syllabus: JSON.parse(JSON.stringify(DEFAULT_SYLLABUS)), classes: [] });
+                    setSelectedCourseId(newCourseId);
                 }
-                setData(newData);
-                setIsModalOpen(false);
+                setData(newData); setIsModalOpen(false);
             };
 
-            const confirmDelete = () => {
-                const newData = { ...data };
-                newData["114"]["下學期"].courses = newData["114"]["下學期"].courses.filter(c => c.id !== deleteTarget.id);
-                if (selectedCourseId === deleteTarget.id) setSelectedCourseId(null);
-                setData(newData);
-                setIsModalOpen(false);
-            };
+            if (!isFirebaseReady) {
+                return (
+                    <div className="h-screen flex flex-col items-center justify-center bg-slate-50 text-slate-400">
+                        <Cloud className="w-10 h-10 mb-4 animate-pulse text-indigo-300" />
+                        <p className="font-bold tracking-widest text-sm">正在連線至雲端金庫...</p>
+                    </div>
+                );
+            }
 
             return (
-                <div className="flex h-screen overflow-hidden bg-slate-50">
+                <div className="flex h-screen bg-slate-50 font-sans text-slate-900 overflow-hidden">
                     {/* 側邊欄 */}
-                    <aside className="w-64 bg-white border-r flex flex-col shrink-0">
-                        <div className="h-16 flex items-center px-6 border-b gap-3">
-                            <Calendar className="text-indigo-600 w-6 h-6" />
+                    <div className={`fixed inset-y-0 left-0 z-30 w-64 bg-white border-r lg:static lg:translate-x-0 flex flex-col transition-transform ${isSidebarOpen ? 'translate-x-0' : '-translate-x-full'}`}>
+                        <div className="flex items-center gap-3 h-16 px-6 border-b border-slate-100 shrink-0">
+                            <Calendar className="w-6 h-6 text-indigo-600" />
                             <span className="font-bold text-lg">進度同步儀</span>
+                            <button onClick={() => setIsSidebarOpen(false)} className="lg:hidden ml-auto p-1"><X className="w-5 h-5"/></button>
                         </div>
-                        <div className="flex-1 p-4 overflow-y-auto">
-                            <div className="flex justify-between items-center mb-4 px-2">
-                                <span className="text-[10px] font-black text-slate-400 uppercase tracking-widest">我的課程</span>
-                                <button onClick={() => { setModalType('addCourse'); setIsModalOpen(true); }} className="p-1 hover:bg-slate-100 rounded-md transition-colors">
-                                    <Plus className="w-4 h-4 text-slate-600" />
-                                </button>
+                        <div className="p-4 border-b border-slate-100 bg-slate-50/50">
+                            <div className="w-full p-3 bg-white rounded-xl border border-slate-200 shadow-sm text-sm font-bold text-slate-600 text-center">
+                                {selectedYear}學年度 {selectedSemester}
+                            </div>
+                        </div>
+                        <div className="flex-1 overflow-y-auto p-4">
+                            <div className="flex items-center justify-between mb-4 px-2 text-[10px] font-black text-slate-400 uppercase tracking-widest">
+                                <span>課程清單</span>
+                                <button onClick={() => openModal('addCourse')} className="p-1 hover:text-indigo-600"><Plus className="w-4 h-4" /></button>
                             </div>
                             <div className="space-y-1">
                                 {currentCourses.map(c => (
-                                    <div key={c.id} className={`flex items-center justify-between px-3 py-2.5 rounded-xl transition-all group ${selectedCourseId === c.id ? 'bg-indigo-50 shadow-sm ring-1 ring-indigo-100' : 'hover:bg-slate-50'}`}>
-                                        <button onClick={() => setSelectedCourseId(c.id)} className="flex-1 flex items-center gap-3 text-left overflow-hidden">
-                                            <div className={`w-2 h-2 rounded-full shrink-0 ${THEME_COLORS.find(t=>t.id===c.themeId)?.base || 'bg-slate-300'}`}></div>
-                                            <span className={`font-bold text-sm truncate ${selectedCourseId === c.id ? 'text-indigo-700' : 'text-slate-600'}`}>{c.name}</span>
-                                        </button>
-                                        <button onClick={() => { setDeleteTarget(c); setModalType('confirmDelete'); setIsModalOpen(true); }} className="opacity-0 group-hover:opacity-100 p-1 text-slate-300 hover:text-rose-500 transition-all">
-                                            <Trash2 className="w-4 h-4" />
-                                        </button>
+                                    <div key={c.id} className="group">
+                                        <div className={`flex items-center justify-between px-3 py-2.5 rounded-xl transition-all cursor-pointer ${selectedCourseId === c.id ? 'bg-indigo-50 text-indigo-700 shadow-sm ring-1 ring-indigo-100' : 'text-slate-500 hover:bg-slate-50'}`}>
+                                            <button onClick={() => { setSelectedCourseId(c.id); setIsSidebarOpen(false); }} className="flex-1 flex items-center gap-3 text-left overflow-hidden">
+                                                <div className={`w-2 h-2 rounded-full shrink-0 ${THEME_COLORS.find(t=>t.id===c.themeId).base}`}></div>
+                                                <span className="font-bold text-sm truncate">{c.name}</span>
+                                            </button>
+                                            <button onClick={(e) => { e.stopPropagation(); openModal('confirmDelete', { type: 'course', id: c.id, name: c.name }); }} className="opacity-0 group-hover:opacity-100 p-1.5 text-slate-300 hover:text-rose-500 rounded-md transition-all">
+                                                <Trash2 className="w-4 h-4" />
+                                            </button>
+                                        </div>
                                     </div>
                                 ))}
                             </div>
                         </div>
-                        <div className="p-4 border-t space-y-2">
-                            <button onClick={() => { setModalType('devicePairing'); setIsModalOpen(true); }} className="w-full py-3 bg-indigo-50 text-indigo-600 rounded-xl text-xs font-bold border border-indigo-100 flex items-center justify-center gap-2 hover:bg-indigo-100 transition-colors">
-                                <Smartphone className="w-4 h-4" /> 跨裝置同步
+                        <div className="p-4 border-t border-slate-100 space-y-2">
+                            <button onClick={() => openModal('devicePairing')} className="w-full flex items-center justify-center gap-2 py-3 bg-indigo-50 text-indigo-600 rounded-xl text-xs font-bold border border-indigo-200 hover:bg-indigo-100 transition-all shadow-sm">
+                                <Smartphone className="w-4 h-4" /> 跨裝置連線
                             </button>
                         </div>
-                    </aside>
+                    </div>
 
                     {/* 主畫面 */}
-                    <main className="flex-1 flex flex-col overflow-hidden">
-                        <header className="h-20 bg-white border-b px-8 flex items-center justify-between shrink-0">
-                            <div className="flex items-center gap-4">
-                                <div className="flex items-center bg-slate-100 p-1 rounded-xl">
-                                    <button className="px-4 py-2 bg-white shadow-sm rounded-lg text-xs font-black text-slate-800">儀表板</button>
+                    <div className="flex-1 flex flex-col h-screen overflow-hidden relative">
+                        <div className="w-full bg-white border-b px-4 lg:px-8 z-20 h-20 flex items-center justify-between shrink-0">
+                            <div className="flex items-center gap-2 lg:gap-4">
+                                <button onClick={() => setIsSidebarOpen(true)} className="lg:hidden p-2 -ml-2"><Menu className="w-6 h-6"/></button>
+                                <div className="flex bg-slate-100 p-1 rounded-xl">
+                                    <button onClick={() => setActiveMainView('dashboard')} className={`flex items-center gap-1.5 px-3 py-2 rounded-lg text-xs font-black transition-all ${activeMainView === 'dashboard' ? 'bg-white text-slate-800 shadow-sm' : 'text-slate-500 hover:text-slate-700'}`}>儀表板</button>
+                                    <button onClick={() => setActiveMainView('calendar')} className={`flex items-center gap-1.5 px-3 py-2 rounded-lg text-xs font-black transition-all ${activeMainView === 'calendar' ? 'bg-white text-slate-800 shadow-sm' : 'text-slate-500 hover:text-slate-700'}`}>行事曆</button>
                                 </div>
-                                <div className="flex items-center">
-                                    {user && isCloudLoaded ? <Cloud className="text-emerald-500 w-5 h-5" /> : <CloudOff className="text-slate-300 w-5 h-5 animate-pulse" />}
+                                <div className="flex items-center px-2">
+                                    {user && isCloudLoaded ? <Cloud className="w-5 h-5 text-indigo-500" title="雲端已同步" /> : <CloudOff className="w-5 h-5 text-slate-300 animate-pulse" title="雲端連線中..." />}
                                 </div>
                             </div>
-                            <div className="text-[10px] font-black text-slate-400 tracking-widest uppercase">V8.2.1 正式發行版</div>
-                        </header>
-
-                        <div className="flex-1 p-8 overflow-auto">
-                            {currentCourse ? (
-                                <div className="max-w-4xl mx-auto space-y-8 animate-in">
-                                    <div className="bg-white p-10 rounded-[40px] shadow-sm border border-slate-100 flex items-center gap-6 relative overflow-hidden">
-                                        <div className={`p-5 rounded-2xl text-white shadow-lg ${currentTheme.base}`}><Book className="w-10 h-10" /></div>
-                                        <div>
-                                            <h1 className="text-3xl font-black text-slate-800 tracking-tight">{currentCourse.system} {currentCourse.name}</h1>
-                                            <p className="text-sm font-bold text-slate-400 mt-1">目前共有 {currentCourse.classes?.length || 0} 個班級</p>
-                                        </div>
-                                        <div className={`absolute top-0 right-0 w-32 h-32 opacity-5 rounded-full -mr-10 -mt-10 ${currentTheme.base}`}></div>
-                                    </div>
-                                    <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                                        <div className="bg-slate-50 rounded-[32px] border-2 border-dashed border-slate-200 p-8 flex flex-col items-center justify-center gap-3 text-slate-400 font-black hover:bg-white hover:border-indigo-300 hover:text-indigo-500 transition-all cursor-not-allowed">
-                                            <Plus className="w-8 h-8" />
-                                            <span>點擊進入行事曆設定課表 (開發中)</span>
-                                        </div>
-                                    </div>
-                                </div>
-                            ) : (
-                                <div className="h-full flex flex-col items-center justify-center text-slate-300 py-20">
-                                    <Database className="w-16 h-16 mb-4 opacity-20" />
-                                    <h2 className="text-xl font-black">歡迎使用教學進度同步儀</h2>
-                                    <p className="text-sm font-bold mt-2">請點擊左側選單的「+」新增您的第一門課程</p>
-                                    <button onClick={() => { setModalType('addCourse'); setIsModalOpen(true); }} className="mt-8 px-8 py-3 bg-indigo-600 text-white rounded-2xl font-black shadow-lg hover:bg-indigo-700 transition-all">立即開始</button>
-                                </div>
-                            )}
+                            <div className="hidden sm:block text-[10px] font-black text-slate-400 tracking-widest uppercase">{APP_VERSION}</div>
                         </div>
-                    </main>
 
-                    {/* 彈出視窗 (Modal) */}
+                        <div className="flex-1 overflow-auto p-4 lg:p-8 bg-slate-50/50">
+                            <div className="max-w-5xl mx-auto h-full">
+                                {activeMainView === 'dashboard' ? (
+                                    currentCourse ? (
+                                        <div className="space-y-8 animate-in">
+                                            <div className="flex items-center gap-5 bg-white p-6 lg:p-10 rounded-[40px] shadow-sm border border-slate-100 relative overflow-hidden">
+                                                <div className={`p-5 rounded-2xl text-white shadow-lg ${currentTheme.base}`}><Book className="w-10 h-10" /></div>
+                                                <div>
+                                                    <h1 className="text-3xl font-black text-slate-800 tracking-tight">{currentCourse.system}{currentCourse.name}</h1>
+                                                    <p className="text-sm text-slate-400 font-bold mt-1">共有 {currentCourse.classes?.length || 0} 個管理班級</p>
+                                                </div>
+                                                <div className={`absolute top-0 right-0 w-32 h-32 opacity-5 rounded-full -mr-10 -mt-10 ${currentTheme.base}`}></div>
+                                            </div>
+                                            
+                                            {(!currentCourse.classes || currentCourse.classes.length === 0) && (
+                                                <div className="bg-slate-50 rounded-[32px] border-2 border-dashed border-slate-200 p-10 flex flex-col items-center justify-center gap-3 text-slate-400 font-black">
+                                                    <LayoutDashboard className="w-12 h-12 mb-2 opacity-50" />
+                                                    <span>您尚未建立任何班級</span>
+                                                    <span className="text-xs font-bold text-slate-400">系統即將在此擴充「新增班級」功能，目前請先體驗雲端連線。</span>
+                                                </div>
+                                            )}
+                                        </div>
+                                    ) : (
+                                        <div className="h-full flex flex-col items-center justify-center text-slate-300 py-20">
+                                            <Database className="w-20 h-20 mb-6 opacity-20" />
+                                            <h2 className="text-2xl font-black text-slate-400">尚未選取課程</h2>
+                                            <p className="text-sm font-bold text-slate-400 mt-2">請從左側選單點擊「+」新增，或選取一門課程開始管理</p>
+                                        </div>
+                                    )
+                                ) : (
+                                    <div className="h-full flex flex-col items-center justify-center bg-white rounded-[40px] border border-slate-100 shadow-sm">
+                                        <CalendarDays className="w-20 h-20 text-slate-200 mb-6" />
+                                        <h2 className="text-2xl font-black text-slate-400">行事曆視圖已就緒</h2>
+                                        <p className="text-sm font-bold text-slate-400 mt-2">正式上線後，您可以在這裡查看各班詳細的進度落點與課表。</p>
+                                    </div>
+                                )}
+                            </div>
+                        </div>
+                    </div>
+
+                    {/* 彈出視窗 */}
                     {isModalOpen && (
                         <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-md z-50 flex items-center justify-center p-4">
                             <div className="bg-white rounded-[48px] shadow-2xl w-full max-w-md overflow-hidden animate-in">
-                                <div className="px-10 py-6 bg-slate-50 border-b flex items-center justify-between">
-                                    <h3 className="font-black text-slate-800 uppercase tracking-tight">
-                                        {modalType === 'addCourse' ? '新增教學課程' : modalType === 'confirmDelete' ? '⚠ 刪除確認' : '跨裝置同步中樞'}
-                                    </h3>
-                                    <button onClick={() => setIsModalOpen(false)} className="p-2 hover:bg-white rounded-xl transition-colors"><X className="w-6 h-6 text-slate-400" /></button>
+                                <div className="px-10 py-6 bg-slate-50 border-b border-slate-100 flex items-center justify-between">
+                                    <h3 className="font-black text-slate-800 uppercase tracking-tight">{modalType === 'addCourse' ? '新增教學課程' : modalType === 'confirmDelete' ? '⚠ 刪除確認' : '跨裝置同步中樞'}</h3>
+                                    <button onClick={() => setIsModalOpen(false)} className="p-2 hover:bg-white rounded-xl text-slate-400 transition-colors"><X className="w-6 h-6" /></button>
                                 </div>
                                 <div className="p-10">
                                     {modalType === 'addCourse' && (
@@ -266,7 +339,7 @@
                                                     ))}
                                                 </div>
                                             </div>
-                                            <button onClick={handleSave} className="w-full py-4 bg-indigo-600 text-white font-black rounded-2xl shadow-xl shadow-indigo-100 hover:bg-indigo-700 transition-all">確認新增</button>
+                                            <button onClick={handleSave} className="w-full py-4 bg-indigo-600 text-white font-black rounded-2xl shadow-xl shadow-indigo-100 hover:bg-indigo-700 transition-all active:scale-95">確認建立</button>
                                         </div>
                                     )}
                                     {modalType === 'confirmDelete' && deleteTarget && (
@@ -278,7 +351,7 @@
                                             </div>
                                             <div className="flex gap-3">
                                                 <button onClick={() => setIsModalOpen(false)} className="flex-1 py-4 bg-slate-100 text-slate-500 font-black rounded-2xl hover:bg-slate-200 transition-all">取消</button>
-                                                <button onClick={confirmDelete} className="flex-1 py-4 bg-rose-500 text-white font-black rounded-2xl shadow-xl shadow-rose-100 hover:bg-rose-600 transition-all">我確定，刪除</button>
+                                                <button onClick={handleConfirmDelete} className="flex-1 py-4 bg-rose-500 text-white font-black rounded-2xl shadow-xl shadow-rose-100 hover:bg-rose-600 transition-all">我確定，刪除</button>
                                             </div>
                                         </div>
                                     )}
@@ -296,13 +369,19 @@
                                                             el.select();
                                                             document.execCommand('copy');
                                                             document.body.removeChild(el);
+                                                            alert("✅ 鑰匙已複製！");
                                                         }} className="p-2 hover:bg-white rounded-xl text-indigo-400 shadow-sm transition-all active:scale-90">
                                                             <Copy className="w-5 h-5" />
                                                         </button>
                                                     </div>
-                                                    <Key className="absolute -bottom-2 -right-2 w-10 h-10 text-indigo-100 opacity-50" />
                                                 </div>
-                                                <p className="text-xs font-bold text-slate-400 mt-6 leading-relaxed">在手機或其他裝置輸入此金鑰，<br/>即可達成「量子糾纏」般的進度同步。</p>
+                                                <p className="text-xs font-bold text-slate-400 mt-6 leading-relaxed">在手機或其他裝置輸入此金鑰，<br/>即可達成「量子糾纏」般的即時同步。</p>
+                                            </div>
+                                            <div className="pt-6 border-t border-slate-100">
+                                                <div className="flex gap-2">
+                                                    <input type="text" value={inputSyncKey} onChange={(e)=>setInputSyncKey(e.target.value.toUpperCase())} placeholder="PHY-XXXXX" className="flex-1 p-4 bg-slate-50 border-2 border-slate-100 rounded-2xl font-black text-center tracking-widest uppercase focus:border-indigo-400 outline-none transition-all" />
+                                                    <button onClick={() => { if(inputSyncKey.length > 3){ setSyncKey(inputSyncKey); localStorage.setItem('physics_sync_key', inputSyncKey); setIsModalOpen(false); } }} className="px-6 bg-slate-800 text-white rounded-2xl font-black hover:bg-slate-900 transition-all">連線</button>
+                                                </div>
                                             </div>
                                         </div>
                                     )}
@@ -319,4 +398,5 @@
     </script>
 </body>
 </html>
+
 
