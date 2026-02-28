@@ -23,11 +23,7 @@
         ::-webkit-scrollbar-track { background: transparent; }
         ::-webkit-scrollbar-thumb { background: #cbd5e1; border-radius: 10px; }
         .ph-bold, .ph-fill { display: inline-block; vertical-align: middle; }
-        /* 阻斷手機長按時出現的系統選單與文字反白 */
-        .native-touch {
-            -webkit-touch-callout: none;
-            user-select: none;
-        }
+        .native-touch { -webkit-touch-callout: none; user-select: none; }
     </style>
 </head>
 <body class="bg-slate-50">
@@ -38,7 +34,7 @@
         import { getAuth, signInAnonymously, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-auth.js";
         import { getFirestore, doc, setDoc, onSnapshot } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-firestore.js";
 
-        // 老師您的專屬金鑰
+        // 老師專屬金鑰
         const firebaseConfig = {
             apiKey: "AIzaSyBduUmDpYh6lv8v-86Tmiay_8xe2dPmehI",
             authDomain: "physics-sync-2026.firebaseapp.com",
@@ -57,7 +53,7 @@
 
     <script type="text/babel">
         const { useState, useEffect, useMemo, Fragment } = React;
-        const APP_VERSION = "v8.9.0 (安規認證版)";
+        const APP_VERSION = "v9.0.0 (正式出廠版)";
 
         const THEME_COLORS = [
             { id: 'sky', name: '晴空水藍', h: 199, s: 89, base: 'bg-sky-400', light: 'bg-sky-50', text: 'text-sky-800' },
@@ -73,13 +69,12 @@
         const PERIODS = [1, 2, 3, 4, 5, 6, 7, 8];
         const DEFAULT_SYLLABUS = { exam1: [{ title: "1-1 物理學的發展", pages: 0 }, { title: "1-2 物理量單位", pages: 0 }], exam2: [{ title: "2-1 速度", pages: 0 }, { title: "2-2 加速度", pages: 0 }], exam3: [{ title: "3-1 牛頓定律", pages: 0 }] };
         
+        // 🌟 清空重置：拔除所有測試資料與假課表，恢復為原廠白紙狀態
         const initialData = {
             "114": {
                 "下學期": {
-                    settings: { startDate: "2026-02-11", common: { exam1: ["2026-03-25", "2026-03-26"], exam2: ["2026-05-12"], exam3: ["2026-06-28"] }, v3: { exam1: [], exam2: [], exam3: [] }, s3: { exam1: [], exam2: [], exam3: [] }, holidays: [{ date: "2026-02-28", desc: "和平紀念日" }] },
-                    courses: [
-                        { id: 'c1', system: '技高一', name: '物理B', themeId: 'sky', syllabus: JSON.parse(JSON.stringify(DEFAULT_SYLLABUS)), classes: [ { id: 'cl1', name: '電一仁', schedule: [{ day: 1, period: 1 }, { day: 1, period: 2 }, { day: 3, period: 5 }], logs: [{ date: '2026-02-23', chapter: '1-1 物理學的發展', page: '5' }], finishedChapters: [] } ] }
-                    ]
+                    settings: { startDate: "", common: { exam1: [], exam2: [], exam3: [] }, v3: { exam1: [], exam2: [], exam3: [] }, s3: { exam1: [], exam2: [], exam3: [] }, holidays: [] },
+                    courses: []
                 }
             }
         };
@@ -91,31 +86,23 @@
             const [syncKey, setSyncKey] = useState(() => localStorage.getItem('physics_sync_key') || ('PHY-' + Math.random().toString(36).substring(2, 7).toUpperCase()));
             useEffect(() => localStorage.setItem('physics_sync_key', syncKey), [syncKey]);
             const [data, setData] = useState(initialData);
-            // 🌟 解決 alert 違規：新增複製成功狀態
             const [isCopied, setIsCopied] = useState(false);
 
             useEffect(() => { const h = () => setIsFirebaseReady(true); window.addEventListener('firebaseReady', h); return () => window.removeEventListener('firebaseReady', h); }, []);
             useEffect(() => { if (!isFirebaseReady || !window.firebase) return; window.firebase.signInAnonymously(window.firebase.auth).catch(e=>console.error(e)); const unsub = window.firebase.onAuthStateChanged(window.firebase.auth, setUser); return () => unsub(); }, [isFirebaseReady]);
-            
             useEffect(() => {
                 if (!user || !syncKey || !isFirebaseReady || !window.firebase) return; 
                 const docRef = window.firebase.doc(window.firebase.db, 'artifacts', window.firebase.currentAppId, 'public', 'data', 'shared_progress', syncKey);
-                
-                // 🌟 修復雷達防護網：加入 error callback 避免無聲崩潰
                 const unsub = window.firebase.onSnapshot(docRef, 
                     (docSnap) => {
                         if (docSnap.exists() && docSnap.data().appData) setData(prev => JSON.stringify(prev) === JSON.stringify(docSnap.data().appData) ? prev : docSnap.data().appData);
                         else window.firebase.setDoc(docRef, { appData: data }, { merge: true }).catch(()=>{});
                         setIsCloudLoaded(true);
                     },
-                    (error) => {
-                        console.error("雲端雷達斷線:", error);
-                        setIsCloudLoaded(false); // 標示離線
-                    }
+                    (err) => { console.error(err); setIsCloudLoaded(false); }
                 );
                 return () => unsub();
             }, [user, syncKey, isFirebaseReady]); 
-
             useEffect(() => {
                 if (!user || !isCloudLoaded || !syncKey || !window.firebase) return;
                 window.firebase.setDoc(window.firebase.doc(window.firebase.db, 'artifacts', window.firebase.currentAppId, 'public', 'data', 'shared_progress', syncKey), { appData: data }, { merge: true }).catch(e=>console.error(e));
@@ -123,13 +110,17 @@
 
             const [selectedYear, setSelectedYear] = useState("114");
             const [selectedSemester, setSelectedSemester] = useState("下學期");
-            const [selectedCourseId, setSelectedCourseId] = useState('c1');
+            const [selectedCourseId, setSelectedCourseId] = useState(null);
             const [isSidebarOpen, setIsSidebarOpen] = useState(false);
             const [isModalOpen, setIsModalOpen] = useState(false);
             const [modalType, setModalType] = useState(''); 
             const [activeMainView, setActiveMainView] = useState('dashboard');
             const [calendarViewMode, setCalendarViewMode] = useState('week'); 
-            const [currentDate, setCurrentDate] = useState(new Date("2026-02-23")); 
+            
+            // 🌟 關閉時光機：全面切換回當下的系統真實時間
+            const [currentDate, setCurrentDate] = useState(new Date()); 
+            const [viewDate, setViewDate] = useState(new Date());
+            
             const [editingClassId, setEditingClassId] = useState(null);
             const [editingCell, setEditingCell] = useState(null);
             const [expandedSyllabusTab, setExpandedSyllabusTab] = useState('exam1');
@@ -137,13 +128,12 @@
             const [inputSyncKey, setInputSyncKey] = useState('');
             const [activeExamKey, setActiveExamKey] = useState(null);
             const [activeSettingTab, setActiveSettingTab] = useState('common');
-            const [viewDate, setViewDate] = useState(new Date("2026-02-01"));
             
             const [formData, setFormData] = useState({ system: '技高一', name: '', color: 'sky', className: '', year: '114', semester: '下學期', importSource: 'none', logPage: '', logChapter: '', logFinishedChapters: [], logEvent: null, logEventText: '', holidayDate: '', holidayDesc: '', examData: { startDate: '', common: {}, v3: {}, s3: {} }, syllabusData: { exam1: [], exam2: [], exam3: [] } });
 
             const currentSemesterData = data[selectedYear]?.[selectedSemester] || { settings: { startDate: '', common: {}, v3: {}, s3: {}, holidays: [] }, courses: [] };
             const currentCourses = currentSemesterData.courses || [];
-            const currentCourse = currentCourses.find(c => c.id === selectedCourseId) || currentCourses[0];
+            const currentCourse = currentCourses.find(c => c.id === selectedCourseId) || null;
             const currentTheme = THEME_COLORS.find(t => t.id === (currentCourse?.themeId || 'sky')) || THEME_COLORS[0];
             
             const normalizedHolidays = useMemo(() => {
@@ -152,7 +142,6 @@
             }, [currentSemesterData.settings.holidays]);
             
             const getHoliday = (dateKey) => normalizedHolidays.find(h => h.date === dateKey);
-
             const formatDateKey = (d) => `${d.getFullYear()}-${(d.getMonth() + 1).toString().padStart(2, '0')}-${d.getDate().toString().padStart(2, '0')}`;
             const isToday = (date) => formatDateKey(date) === formatDateKey(new Date());
 
@@ -177,10 +166,14 @@
                 return results;
             };
 
+            // 🌟 三年滾動遷移演算法：精準切割最新的 6 個學期 (3年)
             const allAvailableSemesters = useMemo(() => {
                 const list = [];
                 Object.keys(data).forEach(y => { Object.keys(data[y]).forEach(s => { list.push({ year: y, semester: s, label: `${y}學年度 ${s}` }); }); });
-                return list.sort((a, b) => (a.year !== b.year ? parseInt(b.year) - parseInt(a.year) : b.semester.localeCompare(a.semester)));
+                // 先依年份排序 (大到小)，再依學期排序
+                list.sort((a, b) => (a.year !== b.year ? parseInt(b.year) - parseInt(a.year) : b.semester.localeCompare(a.semester)));
+                // 只保留前 6 個 (三年)
+                return list.slice(0, 6);
             }, [data]);
 
             const formatDatesForDisplay = (dates) => {
@@ -336,6 +329,7 @@
                         let inheritedCourses = [];
                         if (formData.importSource !== 'none') {
                             const [sYear, sSem] = formData.importSource.split('-');
+                            // 🌟 繼承邏輯驗證：只複製骨架，清空課表與日誌
                             inheritedCourses = data[sYear][sSem].courses.map(course => ({ ...course, classes: course.classes.map(cls => ({ id: cls.id, name: cls.name, schedule: [], logs: [], finishedChapters: [] })) }));
                         }
                         newData[formData.year][formData.semester] = { settings: { startDate: '', common: {exam1:[], exam2:[], exam3:[]}, v3: {exam1:[], exam2:[], exam3:[]}, s3: {exam1:[], exam2:[], exam3:[]}, holidays: [] }, courses: inheritedCourses }; 
@@ -411,6 +405,12 @@
                         <div className="flex-1 overflow-y-auto p-4">
                             <div className="flex justify-between items-center mb-4 px-2 text-[10px] font-black text-slate-400 uppercase tracking-widest"><span>課程清單</span><button onClick={() => openModal('addCourse')} className="p-1 hover:text-indigo-600"><i className="ph-bold ph-plus text-base"></i></button></div>
                             <div className="space-y-1">
+                                {currentCourses.length === 0 && (
+                                    <div className="text-center py-8 text-slate-300">
+                                        <i className="ph-fill ph-book-open text-3xl mb-2 opacity-50"></i>
+                                        <p className="text-xs font-bold">目前尚無課程<br/>點擊上方 + 號建立</p>
+                                    </div>
+                                )}
                                 {currentCourses.map(c => (
                                     <div key={c.id} className="space-y-1">
                                         <div className={`flex items-center justify-between px-3 py-2.5 rounded-xl transition-all ${selectedCourseId === c.id ? 'bg-indigo-50 shadow-sm ring-1 ring-indigo-100' : 'hover:bg-slate-50'}`}>
@@ -467,48 +467,55 @@
 
                         <div className="flex-1 overflow-auto p-4 lg:p-8 bg-slate-50/50">
                             <div className="max-w-[1200px] mx-auto h-full">
-                                {activeMainView === 'dashboard' && currentCourse && (
-                                    <div className="space-y-8 animate-in">
-                                        <div className="flex items-center gap-5 bg-white p-6 lg:p-8 rounded-[40px] shadow-sm border border-slate-100 relative overflow-hidden">
-                                            <div className={`p-5 rounded-2xl text-white shadow-lg ${currentTheme.base}`}><i className="ph-fill ph-book-open-text text-4xl"></i></div>
-                                            <div>
-                                                <h1 className="text-2xl font-black text-slate-800">{currentCourse.system}{currentCourse.name}</h1>
-                                                <div className="flex items-center gap-3 mt-1">
-                                                    <p className="text-sm text-slate-500 font-medium">共 {currentCourse.classes?.length||0} 個班級</p>
-                                                    <span className="w-1.5 h-1.5 rounded-full bg-slate-300"></span>
-                                                    <p className="text-sm text-indigo-500 font-bold flex items-center gap-1"><i className="ph-fill ph-shield-warning text-base"></i> 段考倒數：{formatDatesForDisplay(currentCourse.system === '技高三' ? currentSemesterData.settings.v3.exam1 : currentCourse.system === '綜高三' ? currentSemesterData.settings.s3.exam1 : currentSemesterData.settings.common.exam1)}</p>
-                                                </div>
-                                            </div>
-                                            <div className={`absolute top-0 right-0 w-32 h-32 opacity-5 rounded-full -mr-10 -mt-10 ${currentTheme.base}`}></div>
-                                        </div>
-                                        
-                                        <div className="flex justify-between items-center pt-2">
-                                            <h2 className="text-xl font-black text-slate-700">班級列表</h2>
-                                            <div className="text-xs font-bold text-slate-400 flex items-center gap-2">
-                                                <span className="w-2 h-2 rounded-full bg-emerald-400"></span> 基準點: 快照週結算
-                                            </div>
-                                        </div>
-
-                                        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-                                            {currentCourse.classes?.map(cls => {
-                                                const health = healthData[cls.id] || { periods: '?', colorClass: 'bg-slate-200', textClass: 'text-slate-900', barBgClass: 'bg-slate-100 text-slate-500', percentage: 0, msg: '尚未結算' };
-                                                return (
-                                                <div key={cls.id} className="bg-white p-6 rounded-[32px] border border-slate-100 shadow-sm hover:shadow-md transition-all group">
-                                                    <div className="flex justify-between items-center mb-4"><span className="text-lg font-black text-slate-700">{cls.name}</span><button onClick={() => openModal('editSchedule', cls.id)} className="p-2 bg-slate-50 hover:text-indigo-600 rounded-xl"><i className="ph-bold ph-clock text-sm"></i></button></div>
-                                                    <div className="flex flex-wrap gap-2 mb-4">
-                                                        {cls.schedule.length > 0 
-                                                            ? [...cls.schedule].sort((a,b)=>a.day!==b.day ? a.day-b.day : a.period-b.period).map((s, i) => <span key={i} className={`text-[11px] font-black px-2 py-1 rounded-lg ${currentTheme.light} ${currentTheme.text}`}>週{WEEK_DAYS_DISPLAY[s.day]}第{s.period}節</span>) 
-                                                            : <span className="text-xs text-slate-300 italic">尚未設定課表</span>
-                                                        }
+                                {activeMainView === 'dashboard' ? (
+                                    currentCourse ? (
+                                        <div className="space-y-8 animate-in">
+                                            <div className="flex items-center gap-5 bg-white p-6 lg:p-8 rounded-[40px] shadow-sm border border-slate-100 relative overflow-hidden">
+                                                <div className={`p-5 rounded-2xl text-white shadow-lg ${currentTheme.base}`}><i className="ph-fill ph-book-open-text text-4xl"></i></div>
+                                                <div>
+                                                    <h1 className="text-2xl font-black text-slate-800">{currentCourse.system}{currentCourse.name}</h1>
+                                                    <div className="flex items-center gap-3 mt-1">
+                                                        <p className="text-sm text-slate-500 font-medium">共 {currentCourse.classes?.length||0} 個班級</p>
+                                                        <span className="w-1.5 h-1.5 rounded-full bg-slate-300"></span>
+                                                        <p className="text-sm text-indigo-500 font-bold flex items-center gap-1"><i className="ph-fill ph-shield-warning text-base"></i> 段考倒數：{formatDatesForDisplay(currentCourse.system === '技高三' ? currentSemesterData.settings.v3.exam1 : currentCourse.system === '綜高三' ? currentSemesterData.settings.s3.exam1 : currentSemesterData.settings.common.exam1)}</p>
                                                     </div>
-                                                    <div className="pt-4 border-t border-slate-50 flex justify-between items-end"><div className="flex-1"><div className="flex justify-between items-center mb-2"><div className="flex items-center gap-2"><span className="text-slate-400 font-black text-[14px] uppercase tracking-widest">剩餘可用</span><span className={`text-[10px] font-bold px-2 py-0.5 rounded-full ${health.barBgClass}`}>{health.msg}</span></div><span className={`text-xl font-black ${health.textClass}`}>{health.periods} <span className="text-sm">節</span></span></div><div className="h-2 w-full bg-slate-100 rounded-full overflow-hidden"><div className={`h-full transition-all duration-1000 ${health.colorClass}`} style={{ width: `${health.percentage}%` }}></div></div></div></div>
                                                 </div>
-                                            )})}
-                                            <button onClick={() => openModal('addClass')} className="bg-slate-50 rounded-[32px] border-2 border-dashed border-slate-200 p-6 flex flex-col items-center justify-center gap-2 text-slate-400 font-black hover:bg-white hover:border-indigo-300 hover:text-indigo-500 transition-all min-h-[140px]"><i className="ph-bold ph-plus text-2xl"></i> 建立新班級</button>
+                                                <div className={`absolute top-0 right-0 w-32 h-32 opacity-5 rounded-full -mr-10 -mt-10 ${currentTheme.base}`}></div>
+                                            </div>
+                                            
+                                            <div className="flex justify-between items-center pt-2">
+                                                <h2 className="text-xl font-black text-slate-700">班級列表</h2>
+                                                <div className="text-xs font-bold text-slate-400 flex items-center gap-2">
+                                                    <span className="w-2 h-2 rounded-full bg-emerald-400"></span> 基準點: 快照週結算
+                                                </div>
+                                            </div>
+
+                                            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+                                                {currentCourse.classes?.map(cls => {
+                                                    const health = healthData[cls.id] || { periods: '?', colorClass: 'bg-slate-200', textClass: 'text-slate-900', barBgClass: 'bg-slate-100 text-slate-500', percentage: 0, msg: '尚未結算' };
+                                                    return (
+                                                    <div key={cls.id} className="bg-white p-6 rounded-[32px] border border-slate-100 shadow-sm hover:shadow-md transition-all group">
+                                                        <div className="flex justify-between items-center mb-4"><span className="text-lg font-black text-slate-700">{cls.name}</span><button onClick={() => openModal('editSchedule', cls.id)} className="p-2 bg-slate-50 hover:text-indigo-600 rounded-xl"><i className="ph-bold ph-clock text-sm"></i></button></div>
+                                                        <div className="flex flex-wrap gap-2 mb-4">
+                                                            {cls.schedule.length > 0 
+                                                                ? [...cls.schedule].sort((a,b)=>a.day!==b.day ? a.day-b.day : a.period-b.period).map((s, i) => <span key={i} className={`text-[11px] font-black px-2 py-1 rounded-lg ${currentTheme.light} ${currentTheme.text}`}>週{WEEK_DAYS_DISPLAY[s.day]}第{s.period}節</span>) 
+                                                                : <span className="text-xs text-slate-300 italic">尚未設定課表</span>
+                                                            }
+                                                        </div>
+                                                        <div className="pt-4 border-t border-slate-50 flex justify-between items-end"><div className="flex-1"><div className="flex justify-between items-center mb-2"><div className="flex items-center gap-2"><span className="text-slate-400 font-black text-[14px] uppercase tracking-widest">剩餘可用</span><span className={`text-[10px] font-bold px-2 py-0.5 rounded-full ${health.barBgClass}`}>{health.msg}</span></div><span className={`text-xl font-black ${health.textClass}`}>{health.periods} <span className="text-sm">節</span></span></div><div className="h-2 w-full bg-slate-100 rounded-full overflow-hidden"><div className={`h-full transition-all duration-1000 ${health.colorClass}`} style={{ width: `${health.percentage}%` }}></div></div></div></div>
+                                                    </div>
+                                                )})}
+                                                <button onClick={() => openModal('addClass')} className="bg-slate-50 rounded-[32px] border-2 border-dashed border-slate-200 p-6 flex flex-col items-center justify-center gap-2 text-slate-400 font-black hover:bg-white hover:border-indigo-300 hover:text-indigo-500 transition-all min-h-[140px]"><i className="ph-bold ph-plus text-2xl"></i> 建立新班級</button>
+                                            </div>
                                         </div>
-                                    </div>
-                                )}
-                                {activeMainView === 'calendar' && (
+                                    ) : (
+                                        <div className="h-full flex flex-col items-center justify-center text-slate-300 py-20 animate-in">
+                                            <i className="ph-fill ph-book text-[80px] mb-6 opacity-20"></i>
+                                            <h2 className="text-2xl font-black text-slate-400">目前沒有選擇任何課程</h2>
+                                            <p className="text-sm font-bold text-slate-400 mt-2">請從左側選單點擊「+」新增，或切換學期</p>
+                                        </div>
+                                    )
+                                ) : (
                                     <div className="bg-white rounded-[40px] shadow-sm border border-slate-200 overflow-hidden animate-in">
                                         {calendarViewMode === 'week' ? (
                                             <div className="min-w-[900px]">
@@ -566,7 +573,6 @@
                                                                     
                                                                     {!isH && <button onClick={(e)=>{e.stopPropagation();openModal('editHoliday',dk);}} className="absolute top-2 right-2 w-7 h-7 hidden md:flex items-center justify-center opacity-0 group-hover:opacity-100 text-slate-400 hover:text-rose-500 hover:bg-rose-50 rounded-xl transition-all z-10" title="點擊或長按日期以設為停課日"><i className="ph-bold ph-flag text-sm"></i></button>}
                                                                     <span className={`text-xs font-black mb-1 mt-1 md:mt-0 ${isH?'text-rose-500':'text-slate-600'}`}>{d}</span>
-                                                                    
                                                                     {isH ? (<div className="text-center mt-1"><i className="ph-fill ph-tree-palm text-rose-400 text-lg md:text-xl"></i><div className="text-[10px] font-bold text-rose-600 leading-tight mt-1">{ho.desc}</div></div>) : (
                                                                         <div className="flex flex-col items-center gap-1 w-full mt-1">
                                                                             {exams.map((ex,i)=><div key={i} className={`text-[9px] font-black border rounded py-[1px] text-center w-full ${ex.color}`}>{ex.label}{ex.exam}</div>)}
@@ -646,7 +652,6 @@
                                                                 setIsCopied(true);
                                                                 setTimeout(()=> setIsCopied(false), 2000);
                                                             }).catch(err => {
-                                                                // 備用方案
                                                                 const el = document.createElement('textarea');
                                                                 el.value = syncKey; document.body.appendChild(el); el.select(); document.execCommand('copy'); document.body.removeChild(el);
                                                                 setIsCopied(true); setTimeout(()=> setIsCopied(false), 2000);
@@ -794,7 +799,6 @@
 
                                     {modalType === 'backupRestore' && (<div className="space-y-6"><div className="bg-sky-50 p-6 rounded-[32px] text-center"><i className="ph-bold ph-download-simple text-4xl text-sky-500 mb-2"></i><h4 className="font-black">下載備份檔</h4><p className="text-xs text-slate-500 mb-4">將所有設定下載為 JSON</p><button onClick={handleExport} className="bg-sky-500 text-white px-6 py-3 rounded-xl font-bold">匯出</button></div><div className="bg-rose-50 p-6 rounded-[32px] text-center relative"><i className="ph-bold ph-upload-simple text-4xl text-rose-500 mb-2"></i><h4 className="font-black">還原備份檔</h4><p className="text-xs text-rose-400 mb-4">⚠️ 將覆蓋目前所有資料</p><label className="bg-rose-500 text-white px-6 py-3 rounded-xl font-bold cursor-pointer">匯入<input type="file" accept=".json" className="hidden" onChange={handleImport} /></label></div></div>)}
                                     
-                                    {/* 🌟 修改：移除多餘的預設文字說明 */}
                                     {modalType === 'editHoliday' && (
                                         <div className="space-y-4 text-center">
                                             <i className="ph-fill ph-tree-palm text-4xl text-rose-400"></i>
