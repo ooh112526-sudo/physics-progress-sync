@@ -331,13 +331,20 @@
                 else if (type === 'switchSemester') { setFormData({ ...formData, year: selectedYear, semester: selectedSemester, importSource: 'none' }); }
                 else if (type === 'addCourse') { setFormData({ ...formData, name: '', color: 'sky', system: '技高一', courseId: null }); }
                 else if (type === 'addClass') { setFormData({ ...formData, className: '', classId: null }); }
-                // 🌟 新增：編輯課程的資料反向綁定
                 else if (type === 'editCourse') { setFormData({ ...formData, name: extra.name, color: extra.themeId, system: extra.system, courseId: extra.id }); }
-                // 🌟 新增：編輯班級的資料反向綁定
                 else if (type === 'editClass') { setFormData({ ...formData, className: extra.cls.name, classId: extra.cls.id, courseId: extra.courseId }); }
                 else if (type === 'editSchedule') { setEditingClassId(extra); }
                 else if (type === 'semesterSettings') { setFormData({ ...formData, examData: JSON.parse(JSON.stringify(currentSemesterData.settings)) }); setActiveSettingTab('common'); setActiveExamKey(null); setViewDate(new Date(currentDate)); }
-                else if (type === 'editSyllabus') { setFormData({ ...formData, syllabusData: JSON.parse(JSON.stringify(currentCourses.find(c => c.id === extra).syllabus || DEFAULT_SYLLABUS)) }); setSelectedCourseId(extra); setExpandedSyllabusTab('exam1'); }
+                else if (type === 'editSyllabus') { 
+                    // 🌟 核心技巧 1：偷偷貼上「出廠標籤(originalTitle)」，用來追蹤誰被改了名字
+                    const currentSyllabus = JSON.parse(JSON.stringify(currentCourses.find(c => c.id === extra).syllabus || DEFAULT_SYLLABUS));
+                    ['exam1', 'exam2', 'exam3'].forEach(k => {
+                        currentSyllabus[k].forEach(ch => ch.originalTitle = ch.title);
+                    });
+                    setFormData({ ...formData, syllabusData: currentSyllabus }); 
+                    setSelectedCourseId(extra); 
+                    setExpandedSyllabusTab('exam1'); 
+                }
                 else if (type === 'devicePairing') { setInputSyncKey(''); setIsCopied(false); }
                 else if (type === 'confirmDelete') { setDeleteTarget(extra); }
                 setIsModalOpen(true);
@@ -396,7 +403,36 @@
                     semester.settings.holidays = f; 
                 }
                 else if (modalType === 'semesterSettings') { semester.settings = { ...semester.settings, ...formData.examData }; }
-                else if (modalType === 'editSyllabus') { semester.courses.find(c => c.id === selectedCourseId).syllabus = JSON.parse(JSON.stringify(formData.syllabusData)); }
+                else if (modalType === 'editSyllabus') { 
+                    // 🌟 核心技巧 2：級聯更新引擎 (Cascading Update)
+                    const targetCourse = semester.courses.find(c => c.id === selectedCourseId);
+                    const nameChanges = {}; // 建立 { "舊名字": "新名字" } 的對照表
+
+                    // 整理對照表並清除隱形標籤
+                    ['exam1', 'exam2', 'exam3'].forEach(k => {
+                        formData.syllabusData[k].forEach(ch => {
+                            if (ch.originalTitle && ch.originalTitle !== ch.title) {
+                                nameChanges[ch.originalTitle] = ch.title;
+                            }
+                            delete ch.originalTitle; // 存入大腦前把追蹤標籤撕掉，保持資料純淨
+                        });
+                    });
+
+                    // 儲存最新的課綱
+                    targetCourse.syllabus = JSON.parse(JSON.stringify(formData.syllabusData)); 
+
+                    // 執行全域巡視：如果有名稱改變，自動修正所有班級的舊日誌
+                    if (Object.keys(nameChanges).length > 0) {
+                        targetCourse.classes.forEach(cls => {
+                            // 修正日誌裡的章節名稱
+                            cls.logs.forEach(log => {
+                                if (nameChanges[log.chapter]) log.chapter = nameChanges[log.chapter];
+                            });
+                            // 修正「已完成」名單裡的章節名稱
+                            cls.finishedChapters = cls.finishedChapters.map(ch => nameChanges[ch] || ch);
+                        });
+                    }
+                }
                 setData(newData); setIsModalOpen(false);
             };
 
