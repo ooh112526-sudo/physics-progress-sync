@@ -470,18 +470,17 @@
                                             <button onClick={() => setSelectedCourseId(c.id)} className="flex-1 flex items-center gap-3 text-left overflow-hidden"><div className={`w-2 h-2 rounded-full shrink-0 ${THEME_COLORS.find(t=>t.id===c.themeId).base}`}></div><span className={`font-bold text-sm truncate ${selectedCourseId===c.id?'text-indigo-700':'text-slate-600'}`}>{c.name}</span></button>
                                             <div className="flex">
                                                 <button onClick={(e) => { e.stopPropagation(); openModal('editSyllabus', c.id); }} className="p-1.5 text-slate-300 hover:text-indigo-600"><i className="ph-bold ph-list-checks text-base"></i></button>
-                                                {/* 🌟 新增：編輯課程按鈕 */}
+                                                {/* 🌟 減法設計：移除了原有的垃圾桶，只保留編輯鉛筆 */}
                                                 <button onClick={(e) => { e.stopPropagation(); openModal('editCourse', c); }} className="p-1.5 text-slate-300 hover:text-indigo-600"><i className="ph-bold ph-pencil-simple text-base"></i></button>
-                                                <button onClick={(e) => { e.stopPropagation(); openModal('confirmDelete', { type: 'course', id: c.id, name: c.name }); }} className="p-1.5 text-slate-300 hover:text-rose-500"><i className="ph-bold ph-trash text-base"></i></button>
                                             </div>
                                         </div>
                                         {selectedCourseId === c.id && activeMainView === 'dashboard' && (
                                             <div className="pl-8 space-y-1 pb-2 mt-1">
                                                 {c.classes.map(cls => (
                                                     <div key={cls.id} className="flex justify-between items-center group"><span className="text-xs font-medium text-slate-400">{cls.name}</span><div className="opacity-0 group-hover:opacity-100 flex"><button onClick={() => openModal('editSchedule', cls.id)} className="p-1 text-slate-300 hover:text-indigo-600"><i className="ph-bold ph-clock text-xs"></i></button>
-                                                    {/* 🌟 新增：編輯班級按鈕 */}
+                                                    {/* 🌟 減法設計：移除了班級原有的垃圾桶，只保留編輯鉛筆 */}
                                                     <button onClick={() => openModal('editClass', { courseId: c.id, cls: cls })} className="p-1 text-slate-300 hover:text-indigo-600"><i className="ph-bold ph-pencil-simple text-xs"></i></button>
-                                                    <button onClick={() => openModal('confirmDelete', { type: 'class', id: cls.id, courseId: c.id, name: cls.name })} className="p-1 text-slate-300 hover:text-rose-500"><i className="ph-bold ph-trash text-xs"></i></button></div></div>
+                                                    </div></div>
                                                 ))}
                                                 <button onClick={() => openModal('addClass')} className="text-[10px] font-black text-indigo-400 hover:text-indigo-600 flex items-center gap-1 mt-1"><i className="ph-bold ph-plus"></i> 新增班級</button>
                                             </div>
@@ -817,11 +816,37 @@
                                         </div>
                                     )}
 
-                                    {/* 🌟 讓 addCourse 與 editCourse 共用同一個表單 UI，並動態改變按鈕文字 */}
-                                    {(modalType === 'addCourse' || modalType === 'editCourse') && (<div className="space-y-4"><select value={formData.system} onChange={(e)=>setFormData({...formData, system:e.target.value})} className="w-full p-4 bg-slate-50 rounded-2xl border-2 font-bold outline-none">{['技高一','技高二','技高三','綜高一','綜高二','綜高三'].map(s=><option key={s} value={s}>{s}</option>)}</select><input type="text" value={formData.name} onChange={(e)=>setFormData({...formData, name:e.target.value})} className="w-full p-4 bg-slate-50 rounded-2xl border-2 font-bold outline-none" placeholder="科目名稱，如: 物理B" /><div className="flex justify-center gap-2">{THEME_COLORS.map(c=><button key={c.id} onClick={()=>setFormData({...formData, color:c.id})} className={`w-8 h-8 rounded-full ${c.base} ${formData.color===c.id?'ring-4 ring-slate-200':''}`}/>)}</div><button onClick={handleSave} className="w-full py-4 bg-indigo-600 text-white font-black rounded-2xl">{modalType === 'editCourse' ? '儲存修改' : '確認新增'}</button></div>)}
+                                    {/* 🌟 動作收納：將刪除課程的按鈕移入編輯視窗內 */}
+                                    {(modalType === 'addCourse' || modalType === 'editCourse') && (
+                                        <div className="space-y-4">
+                                            <select value={formData.system} onChange={(e)=>setFormData({...formData, system:e.target.value})} className="w-full p-4 bg-slate-50 rounded-2xl border-2 font-bold outline-none">{['技高一','技高二','技高三','綜高一','綜高二','綜高三'].map(s=><option key={s} value={s}>{s}</option>)}</select>
+                                            <input type="text" value={formData.name} onChange={(e)=>setFormData({...formData, name:e.target.value})} className="w-full p-4 bg-slate-50 rounded-2xl border-2 font-bold outline-none" placeholder="科目名稱，如: 物理B" />
+                                            <div className="flex justify-center gap-2">{THEME_COLORS.map(c=><button key={c.id} onClick={()=>setFormData({...formData, color:c.id})} className={`w-8 h-8 rounded-full ${c.base} ${formData.color===c.id?'ring-4 ring-slate-200':''}`}/>)}</div>
+                                            <button onClick={handleSave} className="w-full py-4 bg-indigo-600 text-white font-black rounded-2xl">{modalType === 'editCourse' ? '儲存修改' : '確認新增'}</button>
+                                            
+                                            {/* 🌟 狀態機跳轉：按下刪除直接跳換至確認警告視窗 */}
+                                            {modalType === 'editCourse' && (
+                                                <button onClick={() => openModal('confirmDelete', { type: 'course', id: formData.courseId, name: formData.name })} className="w-full py-4 bg-rose-50 border-2 border-rose-100 text-rose-500 font-black rounded-2xl hover:bg-rose-500 hover:text-white transition-all flex items-center justify-center gap-2">
+                                                    <i className="ph-bold ph-trash"></i> 刪除此課程
+                                                </button>
+                                            )}
+                                        </div>
+                                    )}
                                     
-                                    {/* 🌟 讓 addClass 與 editClass 共用同一個表單 UI，並動態改變按鈕文字 */}
-                                    {(modalType === 'addClass' || modalType === 'editClass') && (<div className="space-y-4"><input type="text" value={formData.className} onChange={(e)=>setFormData({...formData, className:e.target.value})} className="w-full p-4 bg-slate-50 rounded-2xl border-2 font-bold text-center outline-none" placeholder="班級名稱，如: 電一智" /><button onClick={handleSave} className="w-full py-4 bg-indigo-600 text-white font-black rounded-2xl">{modalType === 'editClass' ? '儲存修改' : '確認新增'}</button></div>)}
+                                    {/* 🌟 動作收納：將刪除班級的按鈕移入編輯視窗內 */}
+                                    {(modalType === 'addClass' || modalType === 'editClass') && (
+                                        <div className="space-y-4">
+                                            <input type="text" value={formData.className} onChange={(e)=>setFormData({...formData, className:e.target.value})} className="w-full p-4 bg-slate-50 rounded-2xl border-2 font-bold text-center outline-none" placeholder="班級名稱，如: 電一智" />
+                                            <button onClick={handleSave} className="w-full py-4 bg-indigo-600 text-white font-black rounded-2xl">{modalType === 'editClass' ? '儲存修改' : '確認新增'}</button>
+                                            
+                                            {/* 🌟 狀態機跳轉：按下刪除直接跳換至確認警告視窗 */}
+                                            {modalType === 'editClass' && (
+                                                <button onClick={() => openModal('confirmDelete', { type: 'class', id: formData.classId, courseId: formData.courseId, name: formData.className })} className="w-full py-4 bg-rose-50 border-2 border-rose-100 text-rose-500 font-black rounded-2xl hover:bg-rose-500 hover:text-white transition-all flex items-center justify-center gap-2">
+                                                    <i className="ph-bold ph-trash"></i> 刪除此班級
+                                                </button>
+                                            )}
+                                        </div>
+                                    )}
                                     
                                     {modalType === 'confirmDelete' && (
                                         <div className="text-center space-y-6">
