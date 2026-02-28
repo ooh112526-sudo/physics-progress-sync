@@ -225,6 +225,7 @@
                 
                 snapshotDate.setHours(0,0,0,0);
                 const snapshotStr = formatDateKey(snapshotDate);
+                const realTodayStr = formatDateKey(realToday); // 🌟 新增：取得今日的字串格式用於比對段考
                 
                 // 🌟 新增：將底層的快照結算日轉換為 UI 顯示字串 (例如 "2/25")
                 const snapshotDisplay = `${snapshotDate.getMonth() + 1}/${snapshotDate.getDate()}`;
@@ -237,6 +238,17 @@
                     let taughtPeriods = 0;    // 🌟 新增變數：記錄真實已經上完、有填日誌的節數
                     let track = (currentCourse.system === '技高三' ? 'v3' : (currentCourse.system === '綜高三' ? 's3' : 'common'));
                     const trackData = currentSemesterData.settings[track] || {};
+                    
+                    // 🌟 邏輯：判斷當前真實時間屬於哪次段考區間
+                    let examLabel = '期末';
+                    const e1 = trackData.exam1?.length ? [...trackData.exam1].sort().pop() : null;
+                    const e2 = trackData.exam2?.length ? [...trackData.exam2].sort().pop() : null;
+                    const e3 = trackData.exam3?.length ? [...trackData.exam3].sort().pop() : null;
+                    
+                    if (e1 && realTodayStr <= e1) examLabel = '一段';
+                    else if (e2 && realTodayStr <= e2) examLabel = '二段';
+                    else if (e3 && realTodayStr <= e3) examLabel = '三段';
+
                     const allExamDates = [...(trackData.exam1 || []), ...(trackData.exam2 || []), ...(trackData.exam3 || [])].sort();
 
                     let nextExamDateStr = null;
@@ -296,7 +308,8 @@
                     classPeriods[cls.id] = { 
                         snapshotRemaining: remainingPeriods, 
                         realRemaining: totalPeriods - taughtPeriods,
-                        total: totalPeriods 
+                        total: totalPeriods,
+                        examLabel: examLabel // 🌟 存入段考標籤
                     }; 
                     if (remainingPeriods > maxPeriods) maxPeriods = remainingPeriods;
                 });
@@ -305,6 +318,7 @@
                     const snapshotPeriods = classPeriods[cls.id]?.snapshotRemaining || 0; 
                     const realPeriods = classPeriods[cls.id]?.realRemaining || 0;
                     const totalPeriods = classPeriods[cls.id]?.total || 0;
+                    const examLabel = classPeriods[cls.id]?.examLabel || '本段考'; // 🌟 取出段考標籤
                     
                     // 🌟 燈號警示系統：嚴格使用「快照基準(snapshotPeriods)」相減，避免非同步假警報
                     const delta = maxPeriods - snapshotPeriods;
@@ -319,7 +333,7 @@
                     const percentage = maxPeriods > 0 ? (snapshotPeriods / maxPeriods) * 100 : 0;
                     
                     // 🌟 輸出給畫面：將 snapshotDisplay 一起打包送出
-                    result[cls.id] = { periods: realPeriods, totalPeriods, delta, status, colorClass, textClass, barBgClass, msg, percentage: maxPeriods > 0 ? (snapshotPeriods / maxPeriods) * 100 : 0, daysToExam: globalDaysToExam, snapshotDisplay };
+                    result[cls.id] = { periods: realPeriods, totalPeriods, delta, status, colorClass, textClass, barBgClass, msg, percentage: maxPeriods > 0 ? (snapshotPeriods / maxPeriods) * 100 : 0, daysToExam: globalDaysToExam, snapshotDisplay, examLabel };
                 });
                 return result;
             }, [currentCourse, currentSemesterData.settings]); 
@@ -679,8 +693,8 @@
 
                                             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
                                                 {currentCourse.classes?.map(cls => {
-                                                    // 🌟 預設值加入 snapshotDisplay 防呆
-                                                    const health = healthData[cls.id] || { periods: '?', totalPeriods: '?', colorClass: 'bg-slate-200', textClass: 'text-slate-900', barBgClass: 'bg-slate-100 text-slate-500', percentage: 0, msg: '尚未結算', snapshotDisplay: '?' };
+                                                    // 🌟 預設值加入 examLabel 防呆
+                                                    const health = healthData[cls.id] || { periods: '?', totalPeriods: '?', colorClass: 'bg-slate-200', textClass: 'text-slate-900', barBgClass: 'bg-slate-100 text-slate-500', percentage: 0, msg: '尚未結算', snapshotDisplay: '?', examLabel: '本段考' };
                                                     return (
                                                     <div key={cls.id} className="bg-white p-6 rounded-[32px] border border-slate-100 shadow-sm hover:shadow-md transition-all group">
                                                         <div className="flex justify-between items-center mb-4"><span className="text-lg font-black text-slate-700">{cls.name}</span><button onClick={() => openModal('editSchedule', cls.id)} className="p-2 bg-slate-50 hover:text-indigo-600 rounded-xl"><i className="ph-bold ph-clock text-sm"></i></button></div>
@@ -694,7 +708,8 @@
                                                             <div className="flex-1">
                                                                 <div className="flex justify-between items-center mb-2">
                                                                     <div className="flex items-center gap-2">
-                                                                        <span className="text-slate-400 font-black text-[14px] uppercase tracking-widest">本段考區間</span>
+                                                                        {/* 🌟 根據時間動態渲染「一段/二段/三段區間」 */}
+                                                                        <span className="text-slate-400 font-black text-[14px] uppercase tracking-widest">{health.examLabel}區間</span>
                                                                         {/* 🌟 UI 更新：在燈號標籤內，加入「至 X/X 前」的結算日提示 */}
                                                                         <div className={`flex items-center text-[10px] font-bold px-2 py-0.5 rounded-full ${health.barBgClass}`}>
                                                                             <span>{health.msg}</span>
