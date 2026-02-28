@@ -23,6 +23,11 @@
         ::-webkit-scrollbar-track { background: transparent; }
         ::-webkit-scrollbar-thumb { background: #cbd5e1; border-radius: 10px; }
         .ph-bold, .ph-fill { display: inline-block; vertical-align: middle; }
+        /* 🌟 核心優化：阻斷手機長按時出現的系統選單與文字反白，打造 App 原生手感 */
+        .native-touch {
+            -webkit-touch-callout: none;
+            user-select: none;
+        }
     </style>
 </head>
 <body class="bg-slate-50">
@@ -52,7 +57,7 @@
 
     <script type="text/babel">
         const { useState, useEffect, useMemo, Fragment } = React;
-        const APP_VERSION = "v8.8.0 (自訂停課日修復版)";
+        const APP_VERSION = "v8.8.2 (極簡長按觸控版)";
 
         const THEME_COLORS = [
             { id: 'sky', name: '晴空水藍', h: 199, s: 89, base: 'bg-sky-400', light: 'bg-sky-50', text: 'text-sky-800' },
@@ -129,14 +134,12 @@
             const currentCourse = currentCourses.find(c => c.id === selectedCourseId) || currentCourses[0];
             const currentTheme = THEME_COLORS.find(t => t.id === (currentCourse?.themeId || 'sky')) || THEME_COLORS[0];
             
-            // 🌟 齒輪 4 尋回：向下相容的翻譯引擎
             const normalizedHolidays = useMemo(() => {
                 const h = currentSemesterData.settings.holidays || [];
                 return h.map(item => typeof item === 'string' ? { date: item, desc: '國定假日' } : item);
             }, [currentSemesterData.settings.holidays]);
             
             const getHoliday = (dateKey) => normalizedHolidays.find(h => h.date === dateKey);
-
             const formatDateKey = (d) => `${d.getFullYear()}-${(d.getMonth() + 1).toString().padStart(2, '0')}-${d.getDate().toString().padStart(2, '0')}`;
             const isToday = (date) => formatDateKey(date) === formatDateKey(new Date());
 
@@ -150,7 +153,7 @@
             };
 
             const getGlobalExams = (dateKey, settings) => {
-                const tracks = [ { id: 'common', label: '高一二', color: 'bg-amber-100 text-amber-800 border-amber-300' }, { id: 'v3', label: '技三', color: 'bg-orange-100 text-orange-800 border-orange-300' }, { id: 's3', label: '綜三', color: 'bg-fuchsia-100 text-fuchsia-800 border-fuchsia-300' } ];
+                const tracks = [ { id: 'common', label: '高一二', color: 'bg-amber-100 text-amber-800' }, { id: 'v3', label: '技三', color: 'bg-orange-100 text-orange-800' }, { id: 's3', label: '綜三', color: 'bg-fuchsia-100 text-fuchsia-800' } ];
                 const results = [];
                 tracks.forEach(t => {
                     const trackData = settings[t.id]; if (!trackData) return;
@@ -293,10 +296,7 @@
                     const lastLog = extra.cls.logs[extra.cls.logs.length - 1] || { chapter: firstChapter, page: '1' }; 
                     setFormData({ ...formData, logChapter: existingLog ? existingLog.chapter : lastLog.chapter, logPage: existingLog ? existingLog.page : lastLog.page, logFinishedChapters: extra.cls.finishedChapters || [], logEvent: existingLog?.event || null, logEventText: existingLog?.eventText || '' }); 
                 }
-                else if (type === 'editHoliday') { 
-                    const existing = getHoliday(extra); 
-                    setFormData({ ...formData, holidayDate: extra, holidayDesc: existing ? existing.desc : '' }); 
-                }
+                else if (type === 'editHoliday') { const existing = getHoliday(extra); setFormData({ ...formData, holidayDate: extra, holidayDesc: existing ? existing.desc : '' }); }
                 else if (type === 'switchSemester') { setFormData({ ...formData, year: selectedYear, semester: selectedSemester, importSource: 'none' }); }
                 else if (type === 'addCourse') { setFormData({ ...formData, name: '', color: 'sky', system: '技高一' }); }
                 else if (type === 'addClass') { setFormData({ ...formData, className: '' }); }
@@ -340,7 +340,6 @@
                 else if (modalType === 'addCourse') { if (!formData.name) return; const newId = `c-${Date.now()}`; semester.courses.push({ id: newId, system: formData.system, name: formData.name, themeId: formData.color, syllabus: JSON.parse(JSON.stringify(DEFAULT_SYLLABUS)), classes: [] }); setSelectedCourseId(newId); }
                 else if (modalType === 'addClass') { if (!formData.className) return; semester.courses.find(c => c.id === selectedCourseId).classes.push({ id: `cl-${Date.now()}`, name: formData.className, schedule: [], logs: [], finishedChapters: [] }); }
                 else if (modalType === 'editHoliday') { 
-                    // 🌟 齒輪 3 尋回：將自訂文字存入資料結構
                     const f = (semester.settings.holidays || []).filter(h => (typeof h === 'string' ? h : h.date) !== formData.holidayDate); 
                     if (formData.holidayDesc.trim()) f.push({ date: formData.holidayDate, desc: formData.holidayDesc }); 
                     else f.push({ date: formData.holidayDate, desc: '國定假日' });
@@ -548,12 +547,30 @@
                                                         for(let d=1;d<=dim;d++) {
                                                             const dateObj=new Date(y,m,d); const dk=formatDateKey(dateObj); const ho=getHoliday(dk); const isH=!!ho; const classes=getDayClasses(dateObj); const exams=getGlobalExams(dk, currentSemesterData.settings);
                                                             grid.push(
-                                                                <div key={d} onClick={()=>{if(isH) openModal('editHoliday',dk); else {setCurrentDate(dateObj);setCalendarViewMode('week');}}} className={`aspect-square rounded-[24px] border p-2 flex flex-col items-center cursor-pointer group ${isToday(dateObj)?'ring-2 ring-indigo-500':''} ${isH?'bg-rose-50 border-rose-100':'bg-white hover:bg-slate-50'}`}>
-                                                                    {/* 🌟 齒輪 1 尋回：停課日小旗幟與事件攔截 */}
-                                                                    {!isH && <button onClick={(e)=>{e.stopPropagation();openModal('editHoliday',dk);}} className="absolute top-2 right-2 p-1.5 opacity-0 group-hover:opacity-100 hover:bg-rose-100 text-rose-300 hover:text-rose-500 rounded-xl transition-all" title="設為停課日"><i className="ph-bold ph-flag text-sm"></i></button>}
-                                                                    <span className={`text-xs font-black mb-1 ${isH?'text-rose-500':'text-slate-600'}`}>{d}</span>
-                                                                    {isH ? (<div className="text-center mt-1"><i className="ph-fill ph-tree-palm text-rose-400 text-lg"></i><div className="text-[10px] font-bold text-rose-600 leading-tight mt-1">{ho.desc}</div></div>) : (
-                                                                        <div className="flex flex-col items-center gap-1 w-full">
+                                                                <div key={d} 
+                                                                    // 🌟 核心優化：點擊跳轉週視圖
+                                                                    onClick={()=>{if(isH) openModal('editHoliday',dk); else {setCurrentDate(dateObj);setCalendarViewMode('week');}}} 
+                                                                    // 🌟 核心優化：攔截系統長按/右鍵，改為呼叫停課設定
+                                                                    onContextMenu={(e) => {
+                                                                        e.preventDefault();
+                                                                        if(!isH) openModal('editHoliday', dk);
+                                                                    }}
+                                                                    className={`aspect-square rounded-[24px] border p-1 md:p-2 flex flex-col items-center cursor-pointer group relative native-touch ${isToday(dateObj)?'ring-2 ring-indigo-500':''} ${isH?'bg-rose-50 border-rose-100':'bg-white hover:bg-slate-50'}`}>
+                                                                    
+                                                                    {/* 🌟 核心優化：恢復電腦版隱形旗幟 (手機版完全隱藏，靠長按觸發) */}
+                                                                    {!isH && (
+                                                                        <button 
+                                                                            onClick={(e)=>{e.stopPropagation();openModal('editHoliday',dk);}} 
+                                                                            className="absolute top-2 right-2 w-7 h-7 hidden md:flex items-center justify-center opacity-0 group-hover:opacity-100 text-slate-400 hover:text-rose-500 hover:bg-rose-50 rounded-xl transition-all z-10" 
+                                                                            title="點擊或長按日期以設為停課日"
+                                                                        >
+                                                                            <i className="ph-bold ph-flag text-sm"></i>
+                                                                        </button>
+                                                                    )}
+
+                                                                    <span className={`text-xs font-black mb-1 mt-1 md:mt-0 ${isH?'text-rose-500':'text-slate-600'}`}>{d}</span>
+                                                                    {isH ? (<div className="text-center mt-1"><i className="ph-fill ph-tree-palm text-rose-400 text-lg md:text-xl"></i><div className="text-[10px] font-bold text-rose-600 leading-tight mt-1">{ho.desc}</div></div>) : (
+                                                                        <div className="flex flex-col items-center gap-1 w-full mt-1">
                                                                             {exams.map((ex,i)=><div key={i} className={`text-[9px] font-black border rounded py-[1px] text-center w-full ${ex.color}`}>{ex.label}{ex.exam}</div>)}
                                                                             <div className="flex flex-wrap justify-center gap-1">
                                                                                 {classes.map((c,idx)=>(
@@ -754,7 +771,6 @@
 
                                     {modalType === 'backupRestore' && (<div className="space-y-6"><div className="bg-sky-50 p-6 rounded-[32px] text-center"><i className="ph-bold ph-download-simple text-4xl text-sky-500 mb-2"></i><h4 className="font-black">下載備份檔</h4><p className="text-xs text-slate-500 mb-4">將所有設定下載為 JSON</p><button onClick={handleExport} className="bg-sky-500 text-white px-6 py-3 rounded-xl font-bold">匯出</button></div><div className="bg-rose-50 p-6 rounded-[32px] text-center relative"><i className="ph-bold ph-upload-simple text-4xl text-rose-500 mb-2"></i><h4 className="font-black">還原備份檔</h4><p className="text-xs text-rose-400 mb-4">⚠️ 將覆蓋目前所有資料</p><label className="bg-rose-500 text-white px-6 py-3 rounded-xl font-bold cursor-pointer">匯入<input type="file" accept=".json" className="hidden" onChange={handleImport} /></label></div></div>)}
                                     
-                                    {/* 🌟 齒輪 2：輸入名稱的控制台視窗 */}
                                     {modalType === 'editHoliday' && (
                                         <div className="space-y-4 text-center">
                                             <i className="ph-fill ph-tree-palm text-4xl text-rose-400"></i>
