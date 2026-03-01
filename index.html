@@ -353,38 +353,49 @@
 
                         scheds.forEach(p => {
                             const currentBlock = getBlock(p, scheds);
-                            const minPeriodInBlock = Math.min(...currentBlock);
-                            const maxPeriodInBlock = Math.max(...currentBlock);
 
-                            const blockLogs = cls.logs?.filter(l => l.date === dateKey && currentBlock.includes(l.period)) || [];
-                            const hasBlockLog = blockLogs.length > 0;
-                            const latestBlockLog = hasBlockLog ? blockLogs[blockLogs.length - 1] : null;
+                            // 🌟 核心修復：廢除「連堂視覺借用」，改為嚴格校對「精準節次 (Exact Period)」
+                            // 只有當「這一天」的「這一節(p)」有真實紀錄，才算有填進度
+                            const exactLog = cls.logs?.find(l => l.date === dateKey && l.period === p);
 
-                            const futureLogsToday = cls.logs?.filter(l => l.date === dateKey && l.period > maxPeriodInBlock).sort((a,b)=>a.period - b.period) || [];
-                            const hasFutureLogToday = futureLogsToday.length > 0;
-                            const firstFutureLogToday = hasFutureLogToday ? futureLogsToday[0] : null;
-
-                            const pastLogs = cls.logs?.filter(l => { if (l.date < dateKey) return true; if (l.date === dateKey && l.period < minPeriodInBlock) return true; return false; }).sort((a, b) => { if (a.date !== b.date) return a.date.localeCompare(b.date); return a.period - b.period; }) || [];
+                            // 尋找「上一次」的進度：包含以前的日子，或是同一天但比較早的節次
+                            const pastLogs = cls.logs?.filter(l => { 
+                                if (l.date < dateKey) return true; 
+                                if (l.date === dateKey && l.period < p) return true; 
+                                return false; 
+                            }).sort((a, b) => { 
+                                if (a.date !== b.date) return a.date.localeCompare(b.date); 
+                                return a.period - b.period; 
+                            }) || [];
                             const lastPastLog = pastLogs.length > 0 ? pastLogs[pastLogs.length - 1] : null;
 
-                            let logPrefix = '上次: '; let logText = '無紀錄'; let isSpecialEvent = false; let isEffectivelyLogged = hasBlockLog || hasFutureLogToday;
+                            let logPrefix = '上次: '; 
+                            let logText = '無紀錄'; 
+                            let isSpecialEvent = false; 
+                            let hasLog = !!exactLog; // 🌟 嚴格開關：只有自己有紀錄才亮綠燈
 
-                            if (hasBlockLog) {
+                            if (exactLog) {
                                 logPrefix = '今日: ';
-                                if (latestBlockLog.event) { isSpecialEvent = true; const evtMap = { quiz: '小考', lab: '實驗', study: '自修', other: '活動' }; logText = `${evtMap[latestBlockLog.event]}${latestBlockLog.eventText ? `:${latestBlockLog.eventText}` : ''}`; } 
-                                else { logText = `${latestBlockLog.chapter.split(' ')[0]}(P${latestBlockLog.page})`; }
-                            } else if (hasFutureLogToday) {
-                                logPrefix = '今日: ';
-                                if (firstFutureLogToday.event) { isSpecialEvent = true; const evtMap = { quiz: '小考', lab: '實驗', study: '自修', other: '活動' }; logText = `${evtMap[firstFutureLogToday.event]}${firstFutureLogToday.eventText ? `:${firstFutureLogToday.eventText}` : ''}`; } 
-                                else { logText = `${firstFutureLogToday.chapter.split(' ')[0]}(P${firstFutureLogToday.page})`; }
+                                if (exactLog.event) { 
+                                    isSpecialEvent = true; 
+                                    const evtMap = { quiz: '小考', lab: '實驗', study: '自修', other: '活動' }; 
+                                    logText = `${evtMap[exactLog.event]}${exactLog.eventText ? `:${exactLog.eventText}` : ''}`; 
+                                } else { 
+                                    logText = `${exactLog.chapter.split(' ')[0]}(P${exactLog.page})`; 
+                                }
                             } else if (lastPastLog) {
-                                logText = `${lastPastLog.chapter.split(' ')[0]}(P${lastPastLog.page})`;
+                                // 如果自己沒紀錄，就把上一次的紀錄調出來顯示為「上次:」
+                                if (lastPastLog.event) {
+                                    const evtMap = { quiz: '小考', lab: '實驗', study: '自修', other: '活動' }; 
+                                    logText = `${evtMap[lastPastLog.event]}${lastPastLog.eventText ? `:${lastPastLog.eventText}` : ''}`;
+                                } else {
+                                    logText = `${lastPastLog.chapter.split(' ')[0]}(P${lastPastLog.page})`;
+                                }
                             }
 
-                            // 🌟 核心修復 1：將 currentBlock (連堂陣列) 打包進卡片資料中送出
                             result.push({
                                 ...cls, period: p, courseTheme: THEME_COLORS.find(t => t.id === course.themeId),
-                                hasLog: isEffectivelyLogged, isSpecialEvent, logPrefix, logText,
+                                hasLog: hasLog, isSpecialEvent, logPrefix, logText,
                                 isHoliday: !!holidayObj, holidayDesc: holidayObj?.desc,
                                 isExam: !!examName, examName: examName,
                                 currentBlock: currentBlock 
