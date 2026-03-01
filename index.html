@@ -409,13 +409,48 @@
             const openModal = (type, extra = null) => {
                 setModalType(type);
                 if (type === 'classJournal') { 
-                    // 🌟 核心修復 2：打開視窗時，把連堂兄弟的陣列存入 editingCell 記憶體，並預設開啟連堂開關
-                    setEditingCell({ classId: extra.cls.id, date: formatDateKey(extra.date), period: extra.period, block: extra.cls.currentBlock || [extra.period] }); 
+                    const dateStr = formatDateKey(extra.date);
+                    const block = extra.cls.currentBlock || [extra.period];
+                    setEditingCell({ classId: extra.cls.id, date: dateStr, period: extra.period, block: block }); 
                     setEditingClassId(extra.cls.id); 
-                    const existingLog = extra.cls.logs.find(l => l.date === formatDateKey(extra.date) && l.period === extra.period); 
+                    
+                    const existingLog = extra.cls.logs.find(l => l.date === dateStr && l.period === extra.period); 
                     const firstChapter = currentCourse.syllabus?.exam1?.[0]?.title || '';
                     const lastLog = extra.cls.logs[extra.cls.logs.length - 1] || { chapter: firstChapter, page: '1' }; 
-                    setFormData({ ...formData, logChapter: existingLog ? existingLog.chapter : lastLog.chapter, logPage: existingLog ? existingLog.page : lastLog.page, logFinishedChapters: extra.cls.finishedChapters || [], logEvent: existingLog?.event || null, logEventText: existingLog?.eventText || '', isConsecutiveLog: true }); 
+                    
+                    // 🌟 核心修復：狀態記憶小偵探 (Smart State Derivation)
+                    // 撈出這一天、這個連堂區塊裡，目前已經存了幾筆紀錄
+                    const blockLogs = extra.cls.logs.filter(l => l.date === dateStr && block.includes(l.period));
+                    
+                    let autoConsecutive = true; // 預設為連堂
+                    if (block.length > 1 && blockLogs.length > 0) {
+                        // 如果有紀錄的數量 等於 連堂的總節數 (例如2節都有紀錄)
+                        if (blockLogs.length === block.length) {
+                            const firstBlockLog = blockLogs[0];
+                            // 檢查每一節的內容是否完全一模一樣？
+                            const allIdentical = blockLogs.every(l => 
+                                l.chapter === firstBlockLog.chapter && 
+                                l.page === firstBlockLog.page && 
+                                l.event === firstBlockLog.event && 
+                                l.eventText === firstBlockLog.eventText
+                            );
+                            autoConsecutive = allIdentical; // 一模一樣才是連堂，否則就是單堂
+                        } else {
+                            // 紀錄數量跟節數對不上 (例如2節課只有1筆紀錄)，代表老師之前拆成了單堂！
+                            autoConsecutive = false;
+                        }
+                    }
+
+                    // 🌟 將推導出來的結果 autoConsecutive 餵給表單
+                    setFormData({ 
+                        ...formData, 
+                        logChapter: existingLog ? existingLog.chapter : lastLog.chapter, 
+                        logPage: existingLog ? existingLog.page : lastLog.page, 
+                        logFinishedChapters: extra.cls.finishedChapters || [], 
+                        logEvent: existingLog?.event || null, 
+                        logEventText: existingLog?.eventText || '', 
+                        isConsecutiveLog: autoConsecutive 
+                    }); 
                 }
                 else if (type === 'editHoliday') { const existing = getHoliday(extra); setFormData({ ...formData, holidayDate: extra, holidayDesc: existing ? existing.desc : '' }); }
                 else if (type === 'switchSemester') { setFormData({ ...formData, year: selectedYear, semester: selectedSemester, importSource: 'none' }); }
