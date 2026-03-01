@@ -53,7 +53,7 @@
 
     <script type="text/babel">
         const { useState, useEffect, useMemo, Fragment } = React;
-        const APP_VERSION = "v9.5.1 (跨裝置連線煞車修復版)";
+        const APP_VERSION = "v9.6.0 (手機觸控體驗極致版)";
 
         const THEME_COLORS = [
             { id: 'sky', name: '晴空水藍', h: 199, s: 89, base: 'bg-sky-400', light: 'bg-sky-50', text: 'text-sky-800' },
@@ -81,9 +81,13 @@
         function App() {
             const [isFirebaseReady, setIsFirebaseReady] = useState(window.firebaseReady || false);
             const [user, setUser] = useState(null);
-            // 控制上傳引擎的關鍵開關
             const [isCloudLoaded, setIsCloudLoaded] = useState(false);
-            const [syncKey, setSyncKey] = useState(() => localStorage.getItem('physics_sync_key') || ('PHY-' + Math.random().toString(36).substring(2, 7).toUpperCase()));
+            const [syncKey, setSyncKey] = useState(() => {
+                const savedKey = localStorage.getItem('physics_sync_key');
+                if (savedKey) return savedKey;
+                const newKey = 'PHY-' + Math.random().toString(36).substring(2, 10).toUpperCase();
+                return newKey;
+            });
             useEffect(() => localStorage.setItem('physics_sync_key', syncKey), [syncKey]);
             const [data, setData] = useState(initialData);
             const [isCopied, setIsCopied] = useState(false);
@@ -111,8 +115,6 @@
 
             useEffect(() => { const h = () => setIsFirebaseReady(true); window.addEventListener('firebaseReady', h); return () => window.removeEventListener('firebaseReady', h); }, []);
             useEffect(() => { if (!isFirebaseReady || !window.firebase) return; window.firebase.signInAnonymously(window.firebase.auth).catch(e=>console.error(e)); const unsub = window.firebase.onAuthStateChanged(window.firebase.auth, setUser); return () => unsub(); }, [isFirebaseReady]);
-            
-            // 📥 下載引擎
             useEffect(() => {
                 if (!user || !syncKey || !isFirebaseReady || !window.firebase) return; 
                 const docRef = window.firebase.doc(window.firebase.db, 'artifacts', window.firebase.currentAppId, 'public', 'data', 'shared_progress', syncKey);
@@ -120,17 +122,13 @@
                     (docSnap) => {
                         if (docSnap.exists() && docSnap.data().appData) setData(prev => JSON.stringify(prev) === JSON.stringify(docSnap.data().appData) ? prev : docSnap.data().appData);
                         else window.firebase.setDoc(docRef, { appData: data }, { merge: true }).catch(()=>{});
-                        // 下載完成，鬆開上傳引擎的煞車
                         setIsCloudLoaded(true);
                     },
                     (err) => { console.error(err); setIsCloudLoaded(false); }
                 );
                 return () => unsub();
             }, [user, syncKey, isFirebaseReady]); 
-            
-            // 📤 上傳引擎
             useEffect(() => {
-                // 🚨 如果煞車 (isCloudLoaded=false) 被踩下，絕對不准執行上傳！
                 if (!user || !isCloudLoaded || !syncKey || !window.firebase) return;
                 window.firebase.setDoc(window.firebase.doc(window.firebase.db, 'artifacts', window.firebase.currentAppId, 'public', 'data', 'shared_progress', syncKey), { appData: data }, { merge: true }).catch(e=>console.error(e));
             }, [data, user, isCloudLoaded, syncKey]);
@@ -152,7 +150,6 @@
             const [activeExamKey, setActiveExamKey] = useState(null);
             const [activeSettingTab, setActiveSettingTab] = useState('common');
             
-            // 🌟 擴充 formData 狀態：新增 isConsecutiveLog 控制連堂開關（預設為 true）
             const [formData, setFormData] = useState({ system: '技高一', name: '', color: 'sky', className: '', year: '114', semester: '下學期', importSource: 'none', logPage: '', logChapter: '', logFinishedChapters: [], logEvent: null, logEventText: '', holidayDate: '', holidayDesc: '', examData: { startDate: '', common: {}, v3: {}, s3: {} }, syllabusData: { exam1: [], exam2: [], exam3: [] }, courseId: null, classId: null, isConsecutiveLog: true });
 
             const currentSemesterData = data[selectedYear]?.[selectedSemester] || { settings: { startDate: '', common: {}, v3: {}, s3: {}, holidays: [] }, courses: [] };
@@ -354,11 +351,8 @@
                         scheds.forEach(p => {
                             const currentBlock = getBlock(p, scheds);
 
-                            // 🌟 核心修復：廢除「連堂視覺借用」，改為嚴格校對「精準節次 (Exact Period)」
-                            // 只有當「這一天」的「這一節(p)」有真實紀錄，才算有填進度
                             const exactLog = cls.logs?.find(l => l.date === dateKey && l.period === p);
 
-                            // 尋找「上一次」的進度：包含以前的日子，或是同一天但比較早的節次
                             const pastLogs = cls.logs?.filter(l => { 
                                 if (l.date < dateKey) return true; 
                                 if (l.date === dateKey && l.period < p) return true; 
@@ -372,7 +366,7 @@
                             let logPrefix = '上次: '; 
                             let logText = '無紀錄'; 
                             let isSpecialEvent = false; 
-                            let hasLog = !!exactLog; // 🌟 嚴格開關：只有自己有紀錄才亮綠燈
+                            let hasLog = !!exactLog; 
 
                             if (exactLog) {
                                 logPrefix = '今日: ';
@@ -384,7 +378,6 @@
                                     logText = `${exactLog.chapter.split(' ')[0]}(P${exactLog.page})`; 
                                 }
                             } else if (lastPastLog) {
-                                // 如果自己沒紀錄，就把上一次的紀錄調出來顯示為「上次:」
                                 if (lastPastLog.event) {
                                     const evtMap = { quiz: '小考', lab: '實驗', study: '自修', other: '活動' }; 
                                     logText = `${evtMap[lastPastLog.event]}${lastPastLog.eventText ? `:${lastPastLog.eventText}` : ''}`;
@@ -418,30 +411,24 @@
                     const firstChapter = currentCourse.syllabus?.exam1?.[0]?.title || '';
                     const lastLog = extra.cls.logs[extra.cls.logs.length - 1] || { chapter: firstChapter, page: '1' }; 
                     
-                    // 🌟 核心修復：狀態記憶小偵探 (Smart State Derivation)
-                    // 撈出這一天、這個連堂區塊裡，目前已經存了幾筆紀錄
                     const blockLogs = extra.cls.logs.filter(l => l.date === dateStr && block.includes(l.period));
                     
-                    let autoConsecutive = true; // 預設為連堂
+                    let autoConsecutive = true; 
                     if (block.length > 1 && blockLogs.length > 0) {
-                        // 如果有紀錄的數量 等於 連堂的總節數 (例如2節都有紀錄)
                         if (blockLogs.length === block.length) {
                             const firstBlockLog = blockLogs[0];
-                            // 檢查每一節的內容是否完全一模一樣？
                             const allIdentical = blockLogs.every(l => 
                                 l.chapter === firstBlockLog.chapter && 
                                 l.page === firstBlockLog.page && 
                                 l.event === firstBlockLog.event && 
                                 l.eventText === firstBlockLog.eventText
                             );
-                            autoConsecutive = allIdentical; // 一模一樣才是連堂，否則就是單堂
+                            autoConsecutive = allIdentical; 
                         } else {
-                            // 紀錄數量跟節數對不上 (例如2節課只有1筆紀錄)，代表老師之前拆成了單堂！
                             autoConsecutive = false;
                         }
                     }
 
-                    // 🌟 將推導出來的結果 autoConsecutive 餵給表單
                     setFormData({ 
                         ...formData, 
                         logChapter: existingLog ? existingLog.chapter : lastLog.chapter, 
@@ -500,10 +487,8 @@
                     const cls = semester.courses.find(c => c.classes.some(cl => cl.id === editingCell.classId)).classes.find(cl => cl.id === editingCell.classId); 
                     cls.finishedChapters = formData.logFinishedChapters; 
                     
-                    // 🌟 核心修復 3：多重寫入引擎。判斷要寫入一節課，還是寫入整個連堂區塊
                     const periodsToUpdate = (formData.isConsecutiveLog && editingCell.block?.length > 1) ? editingCell.block : [editingCell.period];
                     
-                    // 利用迴圈，對所有目標節次進行資料庫實體寫入
                     periodsToUpdate.forEach(p => {
                         const logEntry = { date: editingCell.date, period: p, chapter: formData.logChapter, page: formData.logPage, event: formData.logEvent, eventText: formData.logEventText }; 
                         const existingIdx = cls.logs.findIndex(l => l.date === editingCell.date && l.period === p); 
@@ -606,12 +591,22 @@
             if (!isFirebaseReady) return <div className="h-screen flex flex-col items-center justify-center bg-slate-50 text-slate-400"><i className="ph-bold ph-cloud-arrow-up text-5xl mb-4 animate-pulse text-indigo-300"></i><p className="font-bold tracking-widest text-sm">正在連線至雲端金庫...</p></div>;
 
             return (
-                <div className="flex h-screen bg-slate-50 font-sans text-slate-900 overflow-hidden">
-                    {/* 🌟 色彩定錨點 (Tailwind Safelist) */}
+                <div className="flex h-screen bg-slate-50 font-sans text-slate-900 overflow-hidden relative">
+                    {/* 色彩定錨點 */}
                     <div className="hidden bg-indigo-50/80 bg-red-50/60 bg-blue-50/60 bg-red-50/30 bg-blue-50/30 bg-red-50/50 bg-blue-50/50 hover:bg-red-50 hover:bg-blue-50 bg-red-50 bg-blue-50 text-red-500 text-blue-500 text-red-600 text-blue-600 border-red-100 border-blue-100 border-red-200 border-blue-200 bg-indigo-50 bg-indigo-100 border-indigo-200 text-indigo-600"></div>
 
-                    {/* 側邊欄 */}
-                    <div className={`fixed inset-y-0 left-0 z-30 w-64 bg-white border-r lg:static lg:translate-x-0 flex flex-col transition-transform ${isSidebarOpen ? 'translate-x-0' : '-translate-x-full'}`}>
+                    {/* 🌟 核心修復：手機版專屬「隱形感應幕 (Backdrop Overlay)」 */}
+                    {/* 當側邊欄在手機上打開時，這片幕會覆蓋右側，點擊即可關閉側邊欄 */}
+                    {isSidebarOpen && (
+                        <div 
+                            className="fixed inset-0 bg-slate-900/20 backdrop-blur-sm z-30 lg:hidden transition-opacity" 
+                            onClick={() => setIsSidebarOpen(false)}
+                            title="點擊關閉選單"
+                        ></div>
+                    )}
+
+                    {/* 側邊欄 (🌟 Z軸拉高到 z-40，確保它疊在感應幕之上) */}
+                    <div className={`fixed inset-y-0 left-0 z-40 w-64 bg-white border-r lg:static lg:translate-x-0 flex flex-col transition-transform duration-300 ${isSidebarOpen ? 'translate-x-0' : '-translate-x-full'}`}>
                         <div className="flex items-center gap-3 h-16 px-6 border-b border-slate-100 shrink-0"><i className="ph-bold ph-calendar-check text-indigo-600 text-2xl"></i><span className="font-bold text-lg">進度同步儀</span><button onClick={() => setIsSidebarOpen(false)} className="lg:hidden ml-auto p-1"><i className="ph-bold ph-x text-xl text-slate-400"></i></button></div>
                         <div className="p-4 border-b border-slate-100 bg-slate-50/50"><button onClick={() => openModal('switchSemester')} className="w-full p-3 bg-white rounded-xl border border-slate-200 shadow-sm text-sm font-bold flex justify-between">{selectedYear}學年 {selectedSemester} <i className="ph-bold ph-caret-down"></i></button></div>
                         <div className="flex-1 overflow-y-auto p-4">
@@ -626,7 +621,7 @@
                                 {currentCourses.map(c => (
                                     <div key={c.id} className="space-y-1">
                                         <div className={`flex items-center justify-between px-3 py-2.5 rounded-xl transition-all ${selectedCourseId === c.id ? 'bg-indigo-50 shadow-sm ring-1 ring-indigo-100' : 'hover:bg-slate-50'}`}>
-                                            <button onClick={() => setSelectedCourseId(c.id)} className="flex-1 flex items-center gap-3 text-left overflow-hidden"><div className={`w-2 h-2 rounded-full shrink-0 ${THEME_COLORS.find(t=>t.id===c.themeId).base}`}></div><span className={`font-bold text-sm truncate ${selectedCourseId===c.id?'text-indigo-700':'text-slate-600'}`}>{c.name}</span></button>
+                                            <button onClick={() => { setSelectedCourseId(c.id); setIsSidebarOpen(false); }} className="flex-1 flex items-center gap-3 text-left overflow-hidden"><div className={`w-2 h-2 rounded-full shrink-0 ${THEME_COLORS.find(t=>t.id===c.themeId).base}`}></div><span className={`font-bold text-sm truncate ${selectedCourseId===c.id?'text-indigo-700':'text-slate-600'}`}>{c.name}</span></button>
                                             <div className="flex">
                                                 <button onClick={(e) => { e.stopPropagation(); openModal('editSyllabus', c.id); }} className="p-1.5 text-slate-300 hover:text-indigo-600"><i className="ph-bold ph-list-checks text-base"></i></button>
                                                 <button onClick={(e) => { e.stopPropagation(); openModal('editCourse', c); }} className="p-1.5 text-slate-300 hover:text-indigo-600"><i className="ph-bold ph-pencil-simple text-base"></i></button>
@@ -656,10 +651,8 @@
                     {/* 主畫面 */}
                     <div className="flex-1 flex flex-col h-screen overflow-hidden">
                         
-                        {/* RWD 頂部導航列防擠壓 */}
                         <div className="w-full bg-white border-b px-3 md:px-8 z-20 min-h-[5rem] py-2 md:py-0 md:h-20 flex flex-col md:flex-row items-center justify-between shrink-0 gap-2 md:gap-0">
                             
-                            {/* 左側群組：選單、今天、儀表板/行事曆 */}
                             <div className="flex items-center justify-between w-full md:w-auto">
                                 <div className="flex items-center gap-2 lg:gap-4">
                                     <button onClick={() => setIsSidebarOpen(true)} className="lg:hidden p-2 -ml-2 text-slate-600"><i className="ph-bold ph-list text-2xl"></i></button>
@@ -673,13 +666,11 @@
                                         </button>
                                     </div>
                                 </div>
-                                {/* 手機版雲端狀態燈號 */}
                                 <div className="flex md:hidden items-center px-2">
                                     {user && isCloudLoaded ? <i className="ph-fill ph-cloud-check text-emerald-500 text-xl"></i> : <i className="ph-bold ph-cloud-slash text-slate-300 text-xl animate-pulse"></i>}
                                 </div>
                             </div>
 
-                            {/* 右側群組：視圖切換、日期前後 */}
                             <div className="flex items-center justify-between md:justify-end w-full md:w-auto gap-2 md:gap-4">
                                 {activeMainView === 'calendar' && (
                                     <div className="flex items-center justify-between w-full md:w-auto gap-1 md:gap-2">
@@ -699,7 +690,6 @@
                                         </div>
                                     </div>
                                 )}
-                                {/* 電腦版雲端狀態燈號 */}
                                 <div className="hidden md:flex items-center px-2">
                                     {user && isCloudLoaded ? <i className="ph-fill ph-cloud-check text-emerald-500 text-xl" title="雲端已同步"></i> : <i className="ph-bold ph-cloud-slash text-slate-300 text-xl animate-pulse" title="雲端連線中..."></i>}
                                 </div>
@@ -858,7 +848,6 @@
                                         )}
 
                                         {calendarViewMode === 'week' && (
-                                            /* 外層加上 overflow-auto，讓內部 900px 的課表可以左右滑動 */
                                             <div className="flex-1 overflow-auto w-full relative bg-slate-50/20">
                                                 <div className="min-w-[900px] flex flex-col h-full">
                                                     <div className="grid border-b border-slate-100 bg-slate-50/50 shrink-0" style={{ gridTemplateColumns: '60px 2fr 2fr 2fr 2fr 2fr 1fr 1fr' }}>
@@ -1057,7 +1046,6 @@
                                                 <input type="text" value={inputSyncKey} onChange={(e)=>setInputSyncKey(e.target.value.toUpperCase())} placeholder="PHY-XXXXX" className="flex-1 p-4 bg-slate-50 border-2 rounded-2xl font-black text-center tracking-widest uppercase outline-none" />
                                                 <button onClick={() => { 
                                                     if(inputSyncKey.length > 3){ 
-                                                        // 🚨 關鍵煞車：強迫切斷上傳引擎，等待新保險箱的資料下載完成
                                                         setIsCloudLoaded(false); 
                                                         setSyncKey(inputSyncKey); 
                                                         setIsModalOpen(false); 
@@ -1069,7 +1057,6 @@
                                     
                                     {modalType === 'classJournal' && (
                                         <div className="space-y-4">
-                                            {/* 🌟 核心修復 4：UI 連堂切換器。只有當系統發現這節課有連堂兄弟時，才會顯示這個開關 */}
                                             {editingCell?.block?.length > 1 && (
                                                 <div className="flex bg-slate-100 p-1 rounded-2xl mb-2">
                                                     <button onClick={() => setFormData({...formData, isConsecutiveLog: true})} className={`flex-1 py-2 rounded-xl text-xs font-black transition-all ${formData.isConsecutiveLog ? 'bg-white text-indigo-600 shadow-sm' : 'text-slate-400 hover:text-slate-600'}`}>
@@ -1126,10 +1113,8 @@
                                                                 const semester = newData[selectedYear][selectedSemester];
                                                                 const cls = semester.courses.find(c => c.classes.some(cl => cl.id === editingCell.classId)).classes.find(cl => cl.id === editingCell.classId);
                                                                 
-                                                                // 🌟 核心修復 5：多重抹除引擎。連刪除也能根據開關決定要刪單堂還是整個連堂！
                                                                 const periodsToDelete = (formData.isConsecutiveLog && editingCell.block?.length > 1) ? editingCell.block : [editingCell.period];
                                                                 
-                                                                // 過濾掉符合日期，且節次在「準備刪除陣列」裡的所有紀錄
                                                                 cls.logs = cls.logs.filter(l => !(l.date === editingCell.date && periodsToDelete.includes(l.period)));
                                                                 
                                                                 setData(newData);
@@ -1200,7 +1185,7 @@
                                                                         const sel = (formData.examData[activeSettingTab][activeExamKey] || []).includes(ds); 
                                                                         
                                                                         const currentDayIndex = new Date(viewDate.getFullYear(), viewDate.getMonth(), d).getDay();
-                                                                        const defaultColor = currentDayIndex === 0 ? 'text-red-500' : currentDayIndex === 6 ? 'text-blue-500' : 'text-slate-600 hover:bg-white';
+                                                                        const defaultColor = currentDayIndex === 0 ? 'text-red-500 bg-red-50/50' : currentDayIndex === 6 ? 'text-blue-500 bg-blue-50/50' : 'text-slate-600 hover:bg-white';
 
                                                                         grid.push(<button key={d} onClick={() => toggleDateInExam(ds)} className={`aspect-square text-[10px] font-bold rounded-lg transition-all ${sel ? 'bg-indigo-600 text-white shadow-md scale-110' : defaultColor}`}>{d}</button>); 
                                                                     } return grid; 
@@ -1228,13 +1213,10 @@
                                                                         <button onClick={() => moveSyllabus(k, idx, 1)} disabled={idx===(formData.syllabusData[k].length-1)} className="text-slate-300 hover:text-indigo-600 disabled:opacity-30"><i className="ph-bold ph-arrow-down text-[10px]"></i></button>
                                                                     </div>
                                                                     <input type="text" value={ch.title} onChange={(e)=>{const n={...formData.syllabusData};n[k][idx].title=e.target.value;setFormData({...formData,syllabusData:n})}} className="flex-1 p-2 bg-slate-50 rounded outline-none font-bold text-sm"/>
-                                                                    
-                                                                    {/* 🌟 核心修復：將 w-10 p-2 更改為 w-14 py-2 px-1，釋放數字顯示空間 */}
                                                                     <div className="flex items-center gap-1 bg-slate-50 px-2 rounded text-sm">
                                                                         <input type="number" value={ch.pages||''} onChange={(e)=>{const n={...formData.syllabusData};n[k][idx].pages=parseInt(e.target.value)||0;setFormData({...formData,syllabusData:n})}} className="w-14 py-2 px-1 bg-transparent outline-none text-center font-black" placeholder="-"/>
                                                                         <span className="text-xs text-slate-400">頁</span>
                                                                     </div>
-                                                                    
                                                                     <button onClick={()=>{const n={...formData.syllabusData};n[k].splice(idx,1);setFormData({...formData,syllabusData:n})}} className="p-2 text-rose-300 hover:text-rose-500 bg-rose-50 rounded-lg"><i className="ph-bold ph-trash"></i></button>
                                                                 </div>
                                                             ))}
