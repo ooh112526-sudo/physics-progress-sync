@@ -152,7 +152,8 @@
             const [activeExamKey, setActiveExamKey] = useState(null);
             const [activeSettingTab, setActiveSettingTab] = useState('common');
             
-            const [formData, setFormData] = useState({ system: '技高一', name: '', color: 'sky', className: '', year: '114', semester: '下學期', importSource: 'none', logPage: '', logChapter: '', logFinishedChapters: [], logEvent: null, logEventText: '', holidayDate: '', holidayDesc: '', examData: { startDate: '', common: {}, v3: {}, s3: {} }, syllabusData: { exam1: [], exam2: [], exam3: [] }, courseId: null, classId: null });
+            // 🌟 擴充 formData 狀態：新增 isConsecutiveLog 控制連堂開關（預設為 true）
+            const [formData, setFormData] = useState({ system: '技高一', name: '', color: 'sky', className: '', year: '114', semester: '下學期', importSource: 'none', logPage: '', logChapter: '', logFinishedChapters: [], logEvent: null, logEventText: '', holidayDate: '', holidayDesc: '', examData: { startDate: '', common: {}, v3: {}, s3: {} }, syllabusData: { exam1: [], exam2: [], exam3: [] }, courseId: null, classId: null, isConsecutiveLog: true });
 
             const currentSemesterData = data[selectedYear]?.[selectedSemester] || { settings: { startDate: '', common: {}, v3: {}, s3: {}, holidays: [] }, courses: [] };
             const currentCourses = currentSemesterData.courses || [];
@@ -380,11 +381,13 @@
                                 logText = `${lastPastLog.chapter.split(' ')[0]}(P${lastPastLog.page})`;
                             }
 
+                            // 🌟 核心修復 1：將 currentBlock (連堂陣列) 打包進卡片資料中送出
                             result.push({
                                 ...cls, period: p, courseTheme: THEME_COLORS.find(t => t.id === course.themeId),
                                 hasLog: isEffectivelyLogged, isSpecialEvent, logPrefix, logText,
                                 isHoliday: !!holidayObj, holidayDesc: holidayObj?.desc,
-                                isExam: !!examName, examName: examName
+                                isExam: !!examName, examName: examName,
+                                currentBlock: currentBlock 
                             });
                         });
                     });
@@ -395,12 +398,13 @@
             const openModal = (type, extra = null) => {
                 setModalType(type);
                 if (type === 'classJournal') { 
-                    setEditingCell({ classId: extra.cls.id, date: formatDateKey(extra.date), period: extra.period }); 
+                    // 🌟 核心修復 2：打開視窗時，把連堂兄弟的陣列存入 editingCell 記憶體，並預設開啟連堂開關
+                    setEditingCell({ classId: extra.cls.id, date: formatDateKey(extra.date), period: extra.period, block: extra.cls.currentBlock || [extra.period] }); 
                     setEditingClassId(extra.cls.id); 
                     const existingLog = extra.cls.logs.find(l => l.date === formatDateKey(extra.date) && l.period === extra.period); 
                     const firstChapter = currentCourse.syllabus?.exam1?.[0]?.title || '';
                     const lastLog = extra.cls.logs[extra.cls.logs.length - 1] || { chapter: firstChapter, page: '1' }; 
-                    setFormData({ ...formData, logChapter: existingLog ? existingLog.chapter : lastLog.chapter, logPage: existingLog ? existingLog.page : lastLog.page, logFinishedChapters: extra.cls.finishedChapters || [], logEvent: existingLog?.event || null, logEventText: existingLog?.eventText || '' }); 
+                    setFormData({ ...formData, logChapter: existingLog ? existingLog.chapter : lastLog.chapter, logPage: existingLog ? existingLog.page : lastLog.page, logFinishedChapters: extra.cls.finishedChapters || [], logEvent: existingLog?.event || null, logEventText: existingLog?.eventText || '', isConsecutiveLog: true }); 
                 }
                 else if (type === 'editHoliday') { const existing = getHoliday(extra); setFormData({ ...formData, holidayDate: extra, holidayDesc: existing ? existing.desc : '' }); }
                 else if (type === 'switchSemester') { setFormData({ ...formData, year: selectedYear, semester: selectedSemester, importSource: 'none' }); }
@@ -449,9 +453,16 @@
                 if (modalType === 'classJournal') { 
                     const cls = semester.courses.find(c => c.classes.some(cl => cl.id === editingCell.classId)).classes.find(cl => cl.id === editingCell.classId); 
                     cls.finishedChapters = formData.logFinishedChapters; 
-                    const logEntry = { date: editingCell.date, period: editingCell.period, chapter: formData.logChapter, page: formData.logPage, event: formData.logEvent, eventText: formData.logEventText }; 
-                    const existingIdx = cls.logs.findIndex(l => l.date === editingCell.date && l.period === editingCell.period); 
-                    if (existingIdx >= 0) cls.logs[existingIdx] = logEntry; else cls.logs.push(logEntry); 
+                    
+                    // 🌟 核心修復 3：多重寫入引擎。判斷要寫入一節課，還是寫入整個連堂區塊
+                    const periodsToUpdate = (formData.isConsecutiveLog && editingCell.block?.length > 1) ? editingCell.block : [editingCell.period];
+                    
+                    // 利用迴圈，對所有目標節次進行資料庫實體寫入
+                    periodsToUpdate.forEach(p => {
+                        const logEntry = { date: editingCell.date, period: p, chapter: formData.logChapter, page: formData.logPage, event: formData.logEvent, eventText: formData.logEventText }; 
+                        const existingIdx = cls.logs.findIndex(l => l.date === editingCell.date && l.period === p); 
+                        if (existingIdx >= 0) cls.logs[existingIdx] = logEntry; else cls.logs.push(logEntry); 
+                    });
                 }
                 else if (modalType === 'addCourse') { if (!formData.name) return; const newId = `c-${Date.now()}`; semester.courses.push({ id: newId, system: formData.system, name: formData.name, themeId: formData.color, syllabus: JSON.parse(JSON.stringify(DEFAULT_SYLLABUS)), classes: [] }); setSelectedCourseId(newId); }
                 else if (modalType === 'editCourse') { 
@@ -1012,6 +1023,18 @@
                                     
                                     {modalType === 'classJournal' && (
                                         <div className="space-y-4">
+                                            {/* 🌟 核心修復 4：UI 連堂切換器。只有當系統發現這節課有連堂兄弟時，才會顯示這個開關 */}
+                                            {editingCell?.block?.length > 1 && (
+                                                <div className="flex bg-slate-100 p-1 rounded-2xl mb-2">
+                                                    <button onClick={() => setFormData({...formData, isConsecutiveLog: true})} className={`flex-1 py-2 rounded-xl text-xs font-black transition-all ${formData.isConsecutiveLog ? 'bg-white text-indigo-600 shadow-sm' : 'text-slate-400 hover:text-slate-600'}`}>
+                                                        <i className="ph-bold ph-link text-sm mr-1"></i>連堂同進度 ({editingCell.block.length}節)
+                                                    </button>
+                                                    <button onClick={() => setFormData({...formData, isConsecutiveLog: false})} className={`flex-1 py-2 rounded-xl text-xs font-black transition-all ${!formData.isConsecutiveLog ? 'bg-white text-indigo-600 shadow-sm' : 'text-slate-400 hover:text-slate-600'}`}>
+                                                        單堂獨立 (僅第{editingCell.period}節)
+                                                    </button>
+                                                </div>
+                                            )}
+
                                             <div className="bg-indigo-50/50 p-2 rounded-[24px] border border-indigo-100/50">
                                                 <label className="block text-[10px] font-black text-indigo-400 uppercase tracking-widest pt-1 text-center">目前的教學章節</label>
                                                 <select value={formData.logChapter} onChange={(e) => { const newChapter = e.target.value; setFormData({ ...formData, logChapter: newChapter, logPage: newChapter === '本次段考進度全數完成！' ? '-' : '1' }); }} className="w-full bg-transparent py-2 px-4 text-base font-black text-slate-700 outline-none cursor-pointer text-center appearance-none">
@@ -1056,7 +1079,13 @@
                                                                 const newData = { ...data };
                                                                 const semester = newData[selectedYear][selectedSemester];
                                                                 const cls = semester.courses.find(c => c.classes.some(cl => cl.id === editingCell.classId)).classes.find(cl => cl.id === editingCell.classId);
-                                                                cls.logs = cls.logs.filter(l => !(l.date === editingCell.date && l.period === editingCell.period));
+                                                                
+                                                                // 🌟 核心修復 5：多重抹除引擎。連刪除也能根據開關決定要刪單堂還是整個連堂！
+                                                                const periodsToDelete = (formData.isConsecutiveLog && editingCell.block?.length > 1) ? editingCell.block : [editingCell.period];
+                                                                
+                                                                // 過濾掉符合日期，且節次在「準備刪除陣列」裡的所有紀錄
+                                                                cls.logs = cls.logs.filter(l => !(l.date === editingCell.date && periodsToDelete.includes(l.period)));
+                                                                
                                                                 setData(newData);
                                                                 setIsModalOpen(false);
                                                             }} className="w-1/3 py-4 bg-rose-50 border-2 border-rose-100 text-rose-500 font-black rounded-2xl hover:bg-rose-500 hover:text-white transition-all flex items-center justify-center gap-1">
