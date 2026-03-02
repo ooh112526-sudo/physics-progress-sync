@@ -420,7 +420,8 @@
                             }
 
                             result.push({
-                                ...cls, period: p, courseTheme: THEME_COLORS.find(t => t.id === course.themeId),
+                                // 🌟 核心修復 1：將 courseId (課程身分證) 打包進卡片中，讓它知道自己是誰
+                                ...cls, period: p, courseId: course.id, courseTheme: THEME_COLORS.find(t => t.id === course.themeId),
                                 hasLog: hasLog, isSpecialEvent, logPrefix, logText,
                                 isHoliday: !!holidayObj, holidayDesc: holidayObj?.desc,
                                 isExam: !!examName, examName: examName,
@@ -440,9 +441,26 @@
                     setEditingCell({ classId: extra.cls.id, date: dateStr, period: extra.period, block: block }); 
                     setEditingClassId(extra.cls.id); 
                     
+                    // 🌟 核心修復 2：跨課程時空錯亂校正。找出點擊的班級真正屬於哪個課程，並自動切換系統焦點
+                    const targetCourse = currentCourses.find(c => c.id === extra.courseId);
+                    if (targetCourse) setSelectedCourseId(targetCourse.id);
+
                     const existingLog = extra.cls.logs.find(l => l.date === dateStr && l.period === extra.period); 
-                    const firstChapter = currentCourse.syllabus?.exam1?.[0]?.title || '';
-                    const lastLog = extra.cls.logs[extra.cls.logs.length - 1] || { chapter: firstChapter, page: '1' }; 
+                    const firstChapter = targetCourse?.syllabus?.exam1?.[0]?.title || '';
+                    
+                    // 🌟 核心修復 3：歷史排序校正。捨棄抓陣列末端的笨方法，改為尋找時間軸上「最接近且早於目前」的真實紀錄
+                    const pastLogs = extra.cls.logs.filter(l => { 
+                        if (l.date < dateStr) return true; 
+                        if (l.date === dateStr && l.period < Math.min(...block)) return true; 
+                        return false; 
+                    }).sort((a, b) => { 
+                        if (a.date !== b.date) return a.date.localeCompare(b.date); 
+                        return a.period - b.period; 
+                    });
+                    const trueLastLog = pastLogs.length > 0 ? pastLogs[pastLogs.length - 1] : null;
+                    
+                    const defaultChapter = trueLastLog ? trueLastLog.chapter : firstChapter;
+                    const defaultPage = trueLastLog ? trueLastLog.page : '1';
                     
                     const blockLogs = extra.cls.logs.filter(l => l.date === dateStr && block.includes(l.period));
                     
@@ -464,8 +482,8 @@
 
                     setFormData({ 
                         ...formData, 
-                        logChapter: existingLog ? existingLog.chapter : lastLog.chapter, 
-                        logPage: existingLog ? existingLog.page : lastLog.page, 
+                        logChapter: existingLog ? existingLog.chapter : defaultChapter, 
+                        logPage: existingLog ? existingLog.page : defaultPage, 
                         logFinishedChapters: extra.cls.finishedChapters || [], 
                         logEvent: existingLog?.event || null, 
                         logEventText: existingLog?.eventText || '', 
@@ -877,7 +895,8 @@
                                                                                 else if (cls.hasLog) { bgClass = 'bg-sky-50 border-sky-200 shadow-sm'; }
 
                                                                                 return (
-                                                                                    <button key={cls.id} onClick={() => !isBlocked && openModal('classJournal', {cls, date: currentDate, period: p})} className={`w-full p-4 md:p-5 rounded-[24px] text-left transition-all border-2 relative overflow-hidden flex flex-col justify-center ${bgClass}`}>
+                                                                                    // 🌟 核心修復 4：Day View 日視圖點擊時，一併發送 courseId 參數
+                                                                                    <button key={cls.id} onClick={() => !isBlocked && openModal('classJournal', {cls, date: currentDate, period: p, courseId: cls.courseId})} className={`w-full p-4 md:p-5 rounded-[24px] text-left transition-all border-2 relative overflow-hidden flex flex-col justify-center ${bgClass}`}>
                                                                                         <div className="flex items-center gap-2 mb-1">
                                                                                             <span className={`w-2.5 h-2.5 rounded-full ${cls.courseTheme.base}`}></span>
                                                                                             <div className={`font-black text-base md:text-lg ${titleColor}`}>{cls.name}</div>
@@ -940,7 +959,8 @@
                                                                                 else if (!cls.hasLog) { bgClass = 'bg-white border-slate-100 hover:shadow-md'; }
 
                                                                                 return (
-                                                                                    <button key={cls.id} onClick={() => !isBlocked && openModal('classJournal', {cls, date: d, period: p})} className={`w-full p-3 rounded-[16px] text-left transition-all border relative overflow-hidden flex flex-col justify-center mb-1 last:mb-0 ${bgClass}`}>
+                                                                                    // 🌟 核心修復 5：Week View 週視圖點擊時，一併發送 courseId 參數
+                                                                                    <button key={cls.id} onClick={() => !isBlocked && openModal('classJournal', {cls, date: d, period: p, courseId: cls.courseId})} className={`w-full p-3 rounded-[16px] text-left transition-all border relative overflow-hidden flex flex-col justify-center mb-1 last:mb-0 ${bgClass}`}>
                                                                                         <div className={`font-black text-[15px] leading-tight mb-1 ${titleColor}`}>{cls.name}</div>
                                                                                         <div className={`text-[11px] font-bold truncate ${descColor}`}>{descText}</div>
                                                                                         {!isBlocked && cls.hasLog && <i className={`ph-bold ph-check-circle absolute top-3 right-3 text-lg ${cls.isSpecialEvent ? 'text-blue-500' : 'text-emerald-500'}`} />}
