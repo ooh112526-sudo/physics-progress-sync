@@ -64,7 +64,7 @@
 
     <script type="text/babel">
         const { useState, useEffect, useMemo, Fragment } = React;
-        const APP_VERSION = "v10.3.1 (帳號輸入防呆與提示優化版)";
+        const APP_VERSION = "v10.3.2 (UI 文字明確化版)";
 
         const THEME_COLORS = [
             { id: 'sky', name: '晴空水藍', h: 199, s: 89, base: 'bg-sky-400', light: 'bg-sky-50', text: 'text-sky-800' },
@@ -973,7 +973,7 @@
                             </div>
                         </div>
                         <div className="p-4 border-t border-slate-100 space-y-2">
-                            <button onClick={() => openModal('semesterSettings')} className="w-full py-3 bg-slate-50 text-slate-500 rounded-xl text-xs font-bold border border-dashed border-slate-300 hover:bg-slate-100 flex justify-center gap-2"><i className="ph-bold ph-stack text-sm"></i> 行事曆設定</button>
+                            <button onClick={() => openModal('semesterSettings')} className="w-full py-3 bg-slate-50 text-slate-500 rounded-xl text-xs font-bold border border-dashed border-slate-300 hover:bg-slate-100 flex justify-center gap-2"><i className="ph-bold ph-stack text-sm"></i> 設定開學/段考日</button>
                             
                             {/* 🌟 核心升級 1：將原本散落的三個按鈕，收納成單一的「系統設定」按鈕 */}
                             <button onClick={() => openModal('systemSettings')} className="w-full py-3 bg-slate-50 text-slate-600 rounded-xl text-xs font-bold border border-slate-200 hover:bg-slate-100 flex justify-center gap-2 mt-4">
@@ -1212,26 +1212,39 @@
 
                                         {calendarViewMode === 'week' && (
                                             <div className="flex-1 overflow-auto w-full relative bg-slate-50/20">
-                                                <div className="min-w-[900px] flex flex-col h-full">
-                                                    <div className="grid border-b border-slate-100 bg-slate-50/50 shrink-0" style={{ gridTemplateColumns: '60px 2fr 2fr 2fr 2fr 2fr 1fr 1fr' }}>
-                                                        <div className="p-4 flex items-center justify-center border-r"><i className="ph-bold ph-clock text-slate-400"></i></div>
+                                                {/* 🌟 核心修復 1：移除 h-full，讓標題與內容共享同一個高度軸與捲動條，徹底解決格線偏移 */}
+                                                <div className="min-w-[900px] flex flex-col">
+                                                    
+                                                    {/* 🌟 核心修復 2：讓整個標題列擁有 sticky top-0，向下滑動時吸頂 */}
+                                                    <div className="sticky top-0 z-30 grid border-b border-slate-200 bg-slate-50 shadow-sm" style={{ gridTemplateColumns: '60px 2fr 2fr 2fr 2fr 2fr 1fr 1fr' }}>
+                                                        
+                                                        {/* 🌟 核心修復 3：左上角時鐘圖示，必須同時具備最高圖層 z-40，並向左吸附 */}
+                                                        <div className="sticky left-0 z-40 p-4 flex items-center justify-center border-r border-slate-200 bg-slate-100"><i className="ph-bold ph-clock text-slate-400"></i></div>
+                                                        
                                                         {weekDays.map((d, i) => {
                                                             const dayIdx = d.getDay();
                                                             const dayColor = dayIdx === 0 ? 'text-red-500' : dayIdx === 6 ? 'text-blue-500' : 'text-slate-400';
                                                             const numColor = isToday(d) ? 'text-indigo-600' : dayIdx === 0 ? 'text-red-500' : dayIdx === 6 ? 'text-blue-500' : '';
-                                                            const bgClass = isToday(d) ? 'bg-indigo-50/80' : dayIdx === 0 ? 'bg-red-50/60' : dayIdx === 6 ? 'bg-blue-50/60' : '';
+                                                            
+                                                            {/* 🌟 核心修復 4：吸頂元件必須使用實心背景色，避免捲動時底下文字透出來 */}
+                                                            const bgClass = isToday(d) ? 'bg-indigo-50' : dayIdx === 0 ? 'bg-red-50' : dayIdx === 6 ? 'bg-blue-50' : 'bg-slate-50';
                                                             return (
-                                                                <div key={i} className={`p-4 text-center border-r transition-colors ${bgClass}`}>
+                                                                <div key={i} className={`p-4 text-center border-r border-slate-200 transition-colors ${bgClass}`}>
                                                                     <div className={`text-[10px] font-black ${dayColor}`}>週{WEEK_DAYS_DISPLAY[dayIdx]}</div>
                                                                     <div className={`text-lg font-black ${numColor}`}>{d.getDate()}</div>
                                                                 </div>
                                                             )
                                                         })}
                                                     </div>
-                                                    <div className="flex-1 overflow-y-auto pb-4">
+                                                    
+                                                    {/* 🌟 移除獨立的 overflow-y-auto，統一由最外層控制 */}
+                                                    <div className="pb-4">
                                                         {PERIODS.map(p => (
                                                             <div key={p} className="grid border-b border-slate-100" style={{ gridTemplateColumns: '60px 2fr 2fr 2fr 2fr 2fr 1fr 1fr' }}>
-                                                                <div className="border-r flex items-center justify-center text-[11px] font-black text-slate-400 bg-slate-50/30">第{p}節</div>
+                                                                
+                                                                {/* 🌟 核心修復 5：左側節次列加入 sticky left-0 與實心背景，向右滑動時完美凍結 */}
+                                                                <div className="sticky left-0 z-20 border-r border-slate-200 flex items-center justify-center text-[11px] font-black text-slate-500 bg-slate-50">第{p}節</div>
+                                                                
                                                                 {weekDays.map((d, i) => {
                                                                     const classes = getDayClasses(d).filter(c => c.period === p);
                                                                     const dayIdx = d.getDay();
@@ -1322,8 +1335,8 @@
                     {isModalOpen && (
                         <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-md z-50 flex items-center justify-center p-4">
                             <div className={`bg-white rounded-[48px] shadow-2xl w-full ${modalType==='semesterSettings'||modalType==='editSyllabus'?'max-w-4xl':'max-w-md'} overflow-hidden animate-in flex flex-col max-h-[90vh]`}>
-                                {/* 🌟 核心升級 2：在標題判斷式中加入 'systemSettings' */}
-                                <div className="px-8 py-6 bg-slate-50 border-b flex items-center justify-between shrink-0"><h3 className="font-black text-slate-800 uppercase">{modalType==='addCourse'?'新增課程':modalType==='editCourse'?'編輯課程':modalType==='addClass'?'新增班級':modalType==='editClass'?'編輯班級名稱':modalType==='editSchedule'?'設定課表':modalType==='classJournal'?'教學日誌':modalType==='systemSettings'?'系統設定':modalType==='devicePairing'?'跨裝置同步':modalType==='semesterSettings'?'行事曆分流設定':modalType==='editSyllabus'?'編輯課綱':modalType==='switchSemester'?'切換學期':modalType==='backupRestore'?'資料備份與還原':modalType==='deleteAccount'?'永久刪除帳號':'系統訊息'}</h3><button onClick={()=>setIsModalOpen(false)}><i className="ph-bold ph-x text-xl text-slate-400"></i></button></div>
+                                {/* 🌟 核心升級 2：在標題判斷式中加入 'systemSettings'，並修改 semesterSettings 的標題文字 */}
+                                <div className="px-8 py-6 bg-slate-50 border-b flex items-center justify-between shrink-0"><h3 className="font-black text-slate-800 uppercase">{modalType==='addCourse'?'新增課程':modalType==='editCourse'?'編輯課程':modalType==='addClass'?'新增班級':modalType==='editClass'?'編輯班級名稱':modalType==='editSchedule'?'設定課表':modalType==='classJournal'?'教學日誌':modalType==='systemSettings'?'系統設定':modalType==='devicePairing'?'跨裝置同步':modalType==='semesterSettings'?'學校行事曆設定':modalType==='editSyllabus'?'編輯課綱':modalType==='switchSemester'?'切換學期':modalType==='backupRestore'?'資料備份與還原':modalType==='deleteAccount'?'永久刪除帳號':'系統訊息'}</h3><button onClick={()=>setIsModalOpen(false)}><i className="ph-bold ph-x text-xl text-slate-400"></i></button></div>
                                 <div className="p-8 overflow-y-auto">
                                     
                                     {/* 🌟 核心升級 3：新增「系統設定」的中繼站面板，並套用您設計的樣式 */}
