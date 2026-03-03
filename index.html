@@ -32,7 +32,7 @@
     <script type="module">
         import { initializeApp } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-app.js";
         import { getAuth, signInAnonymously, onAuthStateChanged, setPersistence, browserLocalPersistence } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-auth.js";
-        import { getFirestore, doc, setDoc, getDoc, onSnapshot } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-firestore.js";
+        import { getFirestore, doc, setDoc, getDoc, onSnapshot, deleteDoc } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-firestore.js";
 
         // 老師專屬金鑰
         const firebaseConfig = {
@@ -46,14 +46,14 @@
         
         try {
             const app = initializeApp(firebaseConfig);
-            window.firebase = { auth: getAuth(app), db: getFirestore(app), currentAppId: "physics-sync-2026", signInAnonymously, onAuthStateChanged, setPersistence, browserLocalPersistence, doc, setDoc, getDoc, onSnapshot };
+            window.firebase = { auth: getAuth(app), db: getFirestore(app), currentAppId: "physics-sync-2026", signInAnonymously, onAuthStateChanged, setPersistence, browserLocalPersistence, doc, setDoc, getDoc, onSnapshot, deleteDoc };
             window.firebaseReady = true; window.dispatchEvent(new Event('firebaseReady'));
         } catch (e) { console.error("Firebase Init Error:", e); }
     </script>
 
     <script type="text/babel">
         const { useState, useEffect, useMemo, Fragment } = React;
-        const APP_VERSION = "v10.1.1 (Firestore Path Fix)";
+        const APP_VERSION = "v10.3.0 (註冊防呆雙重確認版)";
 
         const THEME_COLORS = [
             { id: 'sky', name: '晴空水藍', h: 199, s: 89, base: 'bg-sky-400', light: 'bg-sky-50', text: 'text-sky-800' },
@@ -93,6 +93,13 @@
             const [loginKey, setLoginKey] = useState('');
             const [loginError, setLoginError] = useState('');
             const [isProcessingLogin, setIsProcessingLogin] = useState(false);
+            
+            // 🌟 核心升級 1：新增「等待確認的新帳號」狀態
+            const [pendingNewAccount, setPendingNewAccount] = useState(null);
+
+            const [deleteAccountInput, setDeleteAccountInput] = useState('');
+            const [deleteAccountError, setDeleteAccountError] = useState('');
+            const [isProcessingDelete, setIsProcessingDelete] = useState(false);
 
             useEffect(() => {
                 if (syncKey) localStorage.setItem('physics_sync_key', syncKey);
@@ -136,8 +143,6 @@
                 const unsub = window.firebase.onAuthStateChanged(window.firebase.auth, async (currentUser) => {
                     setUser(currentUser);
                     if (currentUser) {
-                        // FIX: Added 'data' collection segment to make the path even-lengthed
-                        // Path must be: artifacts/{appId}/users/{uid}/data/settings
                         const userKeyRef = window.firebase.doc(window.firebase.db, 'artifacts', window.firebase.currentAppId, 'users', currentUser.uid, 'data', 'settings');
                         const userKeySnap = await window.firebase.getDoc(userKeyRef);
                         
@@ -183,6 +188,7 @@
                 window.firebase.setDoc(window.firebase.doc(window.firebase.db, 'artifacts', window.firebase.currentAppId, 'public', 'data', 'shared_progress', syncKey), { appData: data }, { merge: true }).catch(e=>console.error(e));
             }, [requireLogin, data, user, isCloudLoaded, syncKey]);
 
+            // 🌟 核心升級 2：拆分登入驗證與建立新帳號邏輯
             const handleExecuteLogin = async () => {
                 setLoginError('');
                 setIsProcessingLogin(true);
@@ -201,10 +207,13 @@
                         const accSnap = await window.firebase.getDoc(accountRef);
 
                         if (accSnap.exists() && accSnap.data().syncKey) {
+                            // 情況 A：老手登入，直接取回鑰匙
                             targetKey = accSnap.data().syncKey;
                         } else {
-                            targetKey = 'PHY-' + Math.random().toString(36).substring(2, 10).toUpperCase();
-                            await window.firebase.setDoc(accountRef, { syncKey: targetKey }, { merge: true });
+                            // 情況 B：新手註冊，🚨 觸發煞車防線！不立刻建立，而是進入確認模式
+                            setPendingNewAccount(loginAccountId);
+                            setIsProcessingLogin(false);
+                            return; // 提早結束，等待使用者二次確認
                         }
                     } else {
                         const upperKey = loginKey.toUpperCase().trim();
@@ -216,7 +225,7 @@
                         targetKey = upperKey;
                     }
 
-                    // FIX: Added 'data' collection segment to make the path even-lengthed
+                    // 綁定舊帳號或金鑰登入的後續處理
                     const userKeyRef = window.firebase.doc(window.firebase.db, 'artifacts', window.firebase.currentAppId, 'users', user.uid, 'data', 'settings');
                     await window.firebase.setDoc(userKeyRef, { syncKey: targetKey }, { merge: true });
 
@@ -227,6 +236,37 @@
                 } catch (error) {
                     console.error(error);
                     setLoginError('連線錯誤，請稍後再試。');
+                }
+                
+                setIsProcessingLogin(false);
+            };
+
+            // 🌟 核心升級 3：使用者確認後，才真正建立帳號的執行函數
+            const handleConfirmCreateAccount = async () => {
+                setLoginError('');
+                setIsProcessingLogin(true);
+
+                try {
+                    // 1. 產生新金鑰
+                    const targetKey = 'PHY-' + Math.random().toString(36).substring(2, 10).toUpperCase();
+                    
+                    // 2. 寫入密碼本
+                    const accountRef = window.firebase.doc(window.firebase.db, 'artifacts', window.firebase.currentAppId, 'public', 'data', 'accounts', pendingNewAccount);
+                    await window.firebase.setDoc(accountRef, { syncKey: targetKey }, { merge: true });
+
+                    // 3. 寫入設備晶片
+                    const userKeyRef = window.firebase.doc(window.firebase.db, 'artifacts', window.firebase.currentAppId, 'users', user.uid, 'data', 'settings');
+                    await window.firebase.setDoc(userKeyRef, { syncKey: targetKey }, { merge: true });
+
+                    // 4. 更新本地口袋並放行
+                    localStorage.setItem('physics_sync_key', targetKey);
+                    setSyncKey(targetKey);
+                    setPendingNewAccount(null); // 清除懸停狀態
+                    setRequireLogin(false);
+
+                } catch (error) {
+                    console.error(error);
+                    setLoginError('建立帳號時發生錯誤，請稍後再試。');
                 }
                 
                 setIsProcessingLogin(false);
@@ -245,6 +285,48 @@
                 localStorage.removeItem('physics_last_course');
 
                 window.location.reload();
+            };
+
+            const handleNukeAccount = async () => {
+                setDeleteAccountError('');
+                setIsProcessingDelete(true);
+
+                try {
+                    const accountRef = window.firebase.doc(window.firebase.db, 'artifacts', window.firebase.currentAppId, 'public', 'data', 'accounts', deleteAccountInput);
+                    const accSnap = await window.firebase.getDoc(accountRef);
+
+                    if (!accSnap.exists() || accSnap.data().syncKey !== syncKey) {
+                        setDeleteAccountError('驗證失敗：此帳號不存在，或不屬於您當前登入的資料！');
+                        setIsProcessingDelete(false);
+                        return;
+                    }
+
+                    const dataRef = window.firebase.doc(window.firebase.db, 'artifacts', window.firebase.currentAppId, 'public', 'data', 'shared_progress', syncKey);
+                    await window.firebase.deleteDoc(dataRef);
+                    
+                    await window.firebase.deleteDoc(accountRef);
+
+                    if (user) {
+                        const userKeyRef = window.firebase.doc(window.firebase.db, 'artifacts', window.firebase.currentAppId, 'users', user.uid, 'data', 'settings');
+                        await window.firebase.deleteDoc(userKeyRef);
+                    }
+
+                    localStorage.removeItem('physics_sync_key');
+                    localStorage.removeItem('physics_last_year');
+                    localStorage.removeItem('physics_last_sem');
+                    localStorage.removeItem('physics_last_course');
+                    
+                    if (window.firebase && window.firebase.auth) {
+                        await window.firebase.auth.signOut();
+                    }
+                    
+                    window.location.reload();
+
+                } catch (err) {
+                    console.error(err);
+                    setDeleteAccountError('刪除過程發生錯誤，請稍後再試。');
+                    setIsProcessingDelete(false);
+                }
             };
 
             const [isSidebarOpen, setIsSidebarOpen] = useState(false);
@@ -618,6 +700,7 @@
                 }
                 else if (type === 'devicePairing') { setInputSyncKey(''); setIsCopied(false); }
                 else if (type === 'confirmDelete') { setDeleteTarget(extra); }
+                else if (type === 'deleteAccount') { setDeleteAccountInput(''); setDeleteAccountError(''); }
                 setIsModalOpen(true);
             };
 
@@ -761,38 +844,66 @@
                 return (
                     <div className="h-screen flex flex-col items-center justify-center bg-slate-50 p-4">
                         <div className="bg-white rounded-[40px] shadow-2xl p-8 md:p-10 w-full max-w-md animate-in flex flex-col items-center text-center border border-slate-100">
-                            <div className="w-20 h-20 bg-indigo-50 rounded-3xl flex items-center justify-center text-indigo-500 mb-6 shadow-inner">
-                                <i className="ph-fill ph-lock-key text-4xl"></i>
-                            </div>
-                            <h2 className="text-2xl font-black text-slate-800 mb-2">歡迎使用進度同步儀</h2>
-                            <p className="text-sm font-bold text-slate-400 mb-8">系統未偵測到此設備的連線紀錄。<br/>請建立專屬帳號，或輸入已有的金鑰。</p>
-
-                            <div className="w-full flex bg-slate-100 p-1.5 rounded-2xl mb-6">
-                                <button onClick={() => {setLoginTab('account'); setLoginError('');}} className={`flex-1 py-3 text-sm font-black rounded-xl transition-all ${loginTab === 'account' ? 'bg-white text-indigo-600 shadow-sm' : 'text-slate-400 hover:text-slate-600'}`}>帳號登入 (推薦)</button>
-                                <button onClick={() => {setLoginTab('key'); setLoginError('');}} className={`flex-1 py-3 text-sm font-black rounded-xl transition-all ${loginTab === 'key' ? 'bg-white text-indigo-600 shadow-sm' : 'text-slate-400 hover:text-slate-600'}`}>輸入舊金鑰</button>
-                            </div>
-
-                            <div className="w-full space-y-4">
-                                {loginTab === 'account' ? (
-                                    <div className="text-left animate-in">
-                                        <label className="block text-[11px] font-black text-slate-400 uppercase tracking-widest mb-2 ml-1">建立 / 登入您的專屬帳號</label>
-                                        <input type="number" value={loginAccountId} onChange={(e) => setLoginAccountId(e.target.value)} placeholder="手機末 6 碼 + 生日 4 碼 (共 10 碼)" className="w-full p-4 bg-slate-50 border-2 border-slate-200 rounded-2xl font-bold outline-none focus:border-indigo-400 transition-colors text-center tracking-widest" />
-                                        <p className="text-[10px] text-slate-400 mt-2 font-bold px-1 leading-relaxed">💡 提示：例如手機號碼為 0912-345-678，生日為 5月 12日，請輸入 <span className="text-indigo-500 font-black">3456780512</span>。此帳號將永久綁定您的雲端資料。</p>
+                            
+                            {/* 🌟 核心升級 4：確認註冊防線 UI 面板 */}
+                            {pendingNewAccount ? (
+                                <div className="w-full flex flex-col items-center animate-in">
+                                    <div className="w-20 h-20 bg-emerald-50 rounded-full flex items-center justify-center text-emerald-500 mb-6 shadow-inner ring-4 ring-emerald-100">
+                                        <i className="ph-fill ph-user-plus text-4xl"></i>
                                     </div>
-                                ) : (
-                                    <div className="text-left animate-in">
-                                        <label className="block text-[11px] font-black text-slate-400 uppercase tracking-widest mb-2 ml-1">輸入您原本的金鑰</label>
-                                        <input type="text" value={loginKey} onChange={(e) => setLoginKey(e.target.value.toUpperCase())} placeholder="PHY-XXXXXXXX" className="w-full p-4 bg-slate-50 border-2 border-slate-200 rounded-2xl font-black outline-none focus:border-indigo-400 transition-colors text-center tracking-widest uppercase" />
+                                    <h2 className="text-2xl font-black text-slate-800 mb-2">確認建立新帳號</h2>
+                                    <p className="text-sm font-bold text-slate-500 mb-6">系統查無此帳號紀錄，即將為您建立專屬空間。請確認您輸入的號碼是否正確：</p>
+                                    
+                                    <div className="bg-slate-100 py-4 px-6 rounded-2xl border-2 border-slate-200 mb-8 w-full">
+                                        <span className="text-3xl font-black text-indigo-600 tracking-widest">{pendingNewAccount}</span>
                                     </div>
-                                )}
+                                    
+                                    <div className="flex gap-3 w-full">
+                                        <button onClick={() => setPendingNewAccount(null)} disabled={isProcessingLogin} className="flex-1 py-4 bg-slate-100 hover:bg-slate-200 text-slate-500 font-black rounded-2xl transition-all disabled:opacity-50">
+                                            取消重填
+                                        </button>
+                                        <button onClick={handleConfirmCreateAccount} disabled={isProcessingLogin} className="flex-1 py-4 bg-emerald-500 hover:bg-emerald-600 text-white font-black rounded-2xl shadow-lg shadow-emerald-200 transition-all active:scale-95 disabled:opacity-50 flex justify-center items-center gap-2">
+                                            {isProcessingLogin ? <i className="ph-bold ph-spinner animate-spin text-xl"></i> : <i className="ph-bold ph-check text-xl"></i>}
+                                            確認無誤
+                                        </button>
+                                    </div>
+                                </div>
+                            ) : (
+                                <Fragment>
+                                    <div className="w-20 h-20 bg-indigo-50 rounded-3xl flex items-center justify-center text-indigo-500 mb-6 shadow-inner">
+                                        <i className="ph-fill ph-lock-key text-4xl"></i>
+                                    </div>
+                                    <h2 className="text-2xl font-black text-slate-800 mb-2">歡迎使用進度同步儀</h2>
+                                    <p className="text-sm font-bold text-slate-400 mb-8">系統未偵測到此設備的連線紀錄。<br/>請建立專屬帳號，或輸入已有的金鑰。</p>
 
-                                {loginError && <div className="text-[11px] font-bold text-rose-500 bg-rose-50 py-2 px-3 rounded-lg border border-rose-100">{loginError}</div>}
+                                    <div className="w-full flex bg-slate-100 p-1.5 rounded-2xl mb-6">
+                                        <button onClick={() => {setLoginTab('account'); setLoginError('');}} className={`flex-1 py-3 text-sm font-black rounded-xl transition-all ${loginTab === 'account' ? 'bg-white text-indigo-600 shadow-sm' : 'text-slate-400 hover:text-slate-600'}`}>帳號登入 (推薦)</button>
+                                        <button onClick={() => {setLoginTab('key'); setLoginError('');}} className={`flex-1 py-3 text-sm font-black rounded-xl transition-all ${loginTab === 'key' ? 'bg-white text-indigo-600 shadow-sm' : 'text-slate-400 hover:text-slate-600'}`}>輸入舊金鑰</button>
+                                    </div>
 
-                                <button onClick={handleExecuteLogin} disabled={isProcessingLogin} className="w-full py-4 bg-indigo-600 hover:bg-indigo-700 text-white font-black rounded-2xl shadow-lg shadow-indigo-200 transition-all active:scale-95 disabled:opacity-50 flex justify-center items-center gap-2 mt-4">
-                                    {isProcessingLogin ? <i className="ph-bold ph-spinner animate-spin text-xl"></i> : <i className="ph-bold ph-sign-in text-xl"></i>}
-                                    {loginTab === 'account' ? '驗證並進入系統' : '連線金鑰'}
-                                </button>
-                            </div>
+                                    <div className="w-full space-y-4">
+                                        {loginTab === 'account' ? (
+                                            <div className="text-left animate-in">
+                                                <label className="block text-[11px] font-black text-slate-400 uppercase tracking-widest mb-2 ml-1">建立 / 登入您的專屬帳號</label>
+                                                <input type="number" value={loginAccountId} onChange={(e) => setLoginAccountId(e.target.value)} placeholder="手機末 6 碼 + 生日 4 碼 (共 10 碼)" className="w-full p-4 bg-slate-50 border-2 border-slate-200 rounded-2xl font-bold outline-none focus:border-indigo-400 transition-colors text-center tracking-widest" />
+                                                <p className="text-[10px] text-slate-400 mt-2 font-bold px-1 leading-relaxed">💡 提示：若輸入未註冊的號碼，將自動引導您建立新帳號。</p>
+                                            </div>
+                                        ) : (
+                                            <div className="text-left animate-in">
+                                                <label className="block text-[11px] font-black text-slate-400 uppercase tracking-widest mb-2 ml-1">輸入您原本的金鑰</label>
+                                                <input type="text" value={loginKey} onChange={(e) => setLoginKey(e.target.value.toUpperCase())} placeholder="PHY-XXXXXXXX" className="w-full p-4 bg-slate-50 border-2 border-slate-200 rounded-2xl font-black outline-none focus:border-indigo-400 transition-colors text-center tracking-widest uppercase" />
+                                            </div>
+                                        )}
+
+                                        {loginError && <div className="text-[11px] font-bold text-rose-500 bg-rose-50 py-2 px-3 rounded-lg border border-rose-100">{loginError}</div>}
+
+                                        <button onClick={handleExecuteLogin} disabled={isProcessingLogin} className="w-full py-4 bg-indigo-600 hover:bg-indigo-700 text-white font-black rounded-2xl shadow-lg shadow-indigo-200 transition-all active:scale-95 disabled:opacity-50 flex justify-center items-center gap-2 mt-4">
+                                            {isProcessingLogin ? <i className="ph-bold ph-spinner animate-spin text-xl"></i> : <i className="ph-bold ph-sign-in text-xl"></i>}
+                                            {loginTab === 'account' ? '驗證並進入系統' : '連線金鑰'}
+                                        </button>
+                                    </div>
+                                </Fragment>
+                            )}
                         </div>
                     </div>
                 );
@@ -849,6 +960,8 @@
                             <button onClick={() => openModal('semesterSettings')} className="w-full py-3 bg-slate-50 text-slate-500 rounded-xl text-xs font-bold border border-dashed border-slate-300 hover:bg-slate-100 flex justify-center gap-2"><i className="ph-bold ph-stack text-sm"></i> 行事曆設定</button>
                             <button onClick={() => openModal('backupRestore')} className="w-full py-3 bg-slate-50 text-slate-500 rounded-xl text-xs font-bold border border-dashed border-slate-300 hover:bg-slate-100 flex justify-center gap-2"><i className="ph-bold ph-database text-sm"></i> 資料備份</button>
                             <button onClick={() => openModal('devicePairing')} className="w-full py-3 bg-indigo-50 text-indigo-600 rounded-xl text-xs font-bold border border-indigo-200 hover:bg-indigo-100 flex justify-center gap-2"><i className="ph-bold ph-device-mobile text-sm"></i> 跨裝置連線</button>
+                            
+                            <button onClick={() => openModal('deleteAccount')} className="w-full py-3 bg-rose-50 text-rose-500 rounded-xl text-xs font-bold border border-rose-200 hover:bg-rose-100 flex justify-center gap-2 mt-4"><i className="ph-bold ph-warning-octagon text-sm"></i> 刪除帳號與資料</button>
                         </div>
                     </div>
 
@@ -1192,7 +1305,7 @@
                     {isModalOpen && (
                         <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-md z-50 flex items-center justify-center p-4">
                             <div className={`bg-white rounded-[48px] shadow-2xl w-full ${modalType==='semesterSettings'||modalType==='editSyllabus'?'max-w-4xl':'max-w-md'} overflow-hidden animate-in flex flex-col max-h-[90vh]`}>
-                                <div className="px-8 py-6 bg-slate-50 border-b flex items-center justify-between shrink-0"><h3 className="font-black text-slate-800 uppercase">{modalType==='addCourse'?'新增課程':modalType==='editCourse'?'編輯課程':modalType==='addClass'?'新增班級':modalType==='editClass'?'編輯班級名稱':modalType==='editSchedule'?'設定課表':modalType==='classJournal'?'教學日誌':modalType==='devicePairing'?'跨裝置同步':modalType==='semesterSettings'?'行事曆分流設定':modalType==='editSyllabus'?'編輯課綱':modalType==='switchSemester'?'切換學期':modalType==='backupRestore'?'資料備份與還原':'系統訊息'}</h3><button onClick={()=>setIsModalOpen(false)}><i className="ph-bold ph-x text-xl text-slate-400"></i></button></div>
+                                <div className="px-8 py-6 bg-slate-50 border-b flex items-center justify-between shrink-0"><h3 className="font-black text-slate-800 uppercase">{modalType==='addCourse'?'新增課程':modalType==='editCourse'?'編輯課程':modalType==='addClass'?'新增班級':modalType==='editClass'?'編輯班級名稱':modalType==='editSchedule'?'設定課表':modalType==='classJournal'?'教學日誌':modalType==='devicePairing'?'跨裝置同步':modalType==='semesterSettings'?'行事曆分流設定':modalType==='editSyllabus'?'編輯課綱':modalType==='switchSemester'?'切換學期':modalType==='backupRestore'?'資料備份與還原':modalType==='deleteAccount'?'永久刪除帳號':'系統訊息'}</h3><button onClick={()=>setIsModalOpen(false)}><i className="ph-bold ph-x text-xl text-slate-400"></i></button></div>
                                 <div className="p-8 overflow-y-auto">
                                     
                                     {modalType === 'switchSemester' && (
@@ -1255,6 +1368,34 @@
                                         </div>
                                     )}
 
+                                    {modalType === 'deleteAccount' && (
+                                        <div className="space-y-6">
+                                            <div className="text-center">
+                                                <i className="ph-fill ph-warning text-rose-500 text-[60px] animate-pulse mb-2"></i>
+                                                <h4 className="text-xl font-black text-slate-800">永久刪除帳號與資料</h4>
+                                            </div>
+                                            <div className="bg-rose-50 p-5 rounded-[24px] border border-rose-200">
+                                                <p className="text-xs font-bold text-rose-600 leading-relaxed">
+                                                    ⚠️ 這是不可逆的危險操作！<br/>
+                                                    一旦執行，您的「專屬金鑰」、「10 碼帳號」以及「所有班級的雲端進度資料」將被<strong>徹底且永久抹除</strong>，無法復原。
+                                                </p>
+                                            </div>
+                                            <div className="space-y-2">
+                                                <label className="block text-[11px] font-black text-slate-400 uppercase tracking-widest text-center">請輸入您的 10 碼帳號以確認銷毀</label>
+                                                <input type="number" value={deleteAccountInput} onChange={(e)=>setDeleteAccountInput(e.target.value)} placeholder="手機末 6 碼 + 生日 4 碼" className="w-full p-4 bg-slate-50 border-2 border-slate-200 rounded-2xl font-black outline-none focus:border-rose-400 transition-colors text-center tracking-widest" />
+                                            </div>
+                                            
+                                            {deleteAccountError && <div className="text-[11px] font-bold text-rose-500 bg-rose-50 py-3 px-4 rounded-xl border border-rose-100 text-center">{deleteAccountError}</div>}
+                                            
+                                            <div className="flex gap-3 pt-2">
+                                                <button onClick={() => setIsModalOpen(false)} className="flex-1 py-4 bg-slate-100 text-slate-500 font-black rounded-2xl hover:bg-slate-200 transition-all">取消</button>
+                                                <button onClick={handleNukeAccount} disabled={isProcessingDelete || deleteAccountInput.length !== 10} className="flex-1 py-4 bg-rose-500 text-white font-black rounded-2xl shadow-xl shadow-rose-100 hover:bg-rose-600 transition-all disabled:opacity-50 disabled:shadow-none flex justify-center items-center gap-2">
+                                                    {isProcessingDelete ? <i className="ph-bold ph-spinner animate-spin text-lg"></i> : <i className="ph-bold ph-trash text-lg"></i>} 確認並引爆
+                                                </button>
+                                            </div>
+                                        </div>
+                                    )}
+
                                     {modalType === 'devicePairing' && (
                                         <div className="space-y-6">
                                             <div className="p-6 bg-indigo-50 rounded-[32px] text-center">
@@ -1276,7 +1417,7 @@
                                                 </div>
                                             </div>
                                             <div className="pt-4 border-t border-slate-100">
-                                                <button onClick={handleLogoutAndClear} className="w-full py-4 bg-rose-50 border border-rose-100 text-rose-500 font-black rounded-2xl hover:bg-rose-500 hover:text-white transition-all flex justify-center items-center gap-2">
+                                                <button onClick={handleLogoutAndClear} className="w-full py-4 bg-slate-50 border border-slate-200 text-slate-500 font-black rounded-2xl hover:bg-slate-100 transition-all flex justify-center items-center gap-2">
                                                     <i className="ph-bold ph-plug-x text-lg"></i> 登出並解除綁定 (公用電腦用)
                                                 </button>
                                                 <p className="text-[10px] text-slate-400 text-center mt-3 font-bold">點擊後將登出並清除這台電腦上的暫存畫面，但<span className="text-emerald-500">雲端資料不會受到任何影響</span>。</p>
