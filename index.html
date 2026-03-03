@@ -24,6 +24,17 @@
         ::-webkit-scrollbar-thumb { background: #cbd5e1; border-radius: 10px; }
         .ph-bold, .ph-fill { display: inline-block; vertical-align: middle; }
         .native-touch { -webkit-touch-callout: none; user-select: none; }
+        
+        /* 🌟 核心修復：強制隱藏數字輸入框的預設上下箭頭 (Chrome, Safari, Edge) */
+        input::-webkit-outer-spin-button,
+        input::-webkit-inner-spin-button {
+            -webkit-appearance: none;
+            margin: 0;
+        }
+        /* 🌟 核心修復：強制隱藏數字輸入框的預設上下箭頭 (Firefox) */
+        input[type=number] {
+            -moz-appearance: textfield;
+        }
     </style>
 </head>
 <body class="bg-slate-50">
@@ -53,7 +64,7 @@
 
     <script type="text/babel">
         const { useState, useEffect, useMemo, Fragment } = React;
-        const APP_VERSION = "v10.3.0 (註冊防呆雙重確認版)";
+        const APP_VERSION = "v10.3.1 (帳號輸入防呆與提示優化版)";
 
         const THEME_COLORS = [
             { id: 'sky', name: '晴空水藍', h: 199, s: 89, base: 'bg-sky-400', light: 'bg-sky-50', text: 'text-sky-800' },
@@ -882,15 +893,20 @@
                                     </div>
 
                                     <div className="w-full space-y-4">
-                                        {loginTab === 'account' ? (
-                                            <div className="text-left animate-in">
-                                                <label className="block text-[11px] font-black text-slate-400 uppercase tracking-widest mb-2 ml-1">建立 / 登入您的專屬帳號</label>
-                                                <input type="number" value={loginAccountId} onChange={(e) => setLoginAccountId(e.target.value)} placeholder="手機末 6 碼 + 生日 4 碼 (共 10 碼)" className="w-full p-4 bg-slate-50 border-2 border-slate-200 rounded-2xl font-bold outline-none focus:border-indigo-400 transition-colors text-center tracking-widest" />
-                                                <p className="text-[10px] text-slate-400 mt-2 font-bold px-1 leading-relaxed">💡 提示：若輸入未註冊的號碼，將自動引導您建立新帳號。</p>
-                                            </div>
-                                        ) : (
-                                            <div className="text-left animate-in">
-                                                <label className="block text-[11px] font-black text-slate-400 uppercase tracking-widest mb-2 ml-1">輸入您原本的金鑰</label>
+                                {loginTab === 'account' ? (
+                                    <div className="text-left animate-in">
+                                        <label className="block text-[11px] font-black text-slate-400 uppercase tracking-widest mb-2 ml-1">建立 / 登入您的專屬帳號</label>
+                                        <input type="number" value={loginAccountId} onChange={(e) => setLoginAccountId(e.target.value)} placeholder="手機末 6 碼 + 生日 4 碼 (共 10 碼)" className="w-full p-4 bg-slate-50 border-2 border-slate-200 rounded-2xl font-bold outline-none focus:border-indigo-400 transition-colors text-center tracking-widest" />
+                                        
+                                        {/* 🌟 核心修復：加入清晰的具體數字範例 */}
+                                        <p className="text-[10px] text-slate-400 mt-2 font-bold px-1 leading-relaxed">
+                                            💡 範例：手機號碼 0912-345-678，生日 5月12日，請輸入 <span className="text-indigo-500 font-black">3456780512</span>。<br/>
+                                            (若輸入未註冊的帳號，將自動引導您建立)
+                                        </p>
+                                    </div>
+                                ) : (
+                                    <div className="text-left animate-in">
+                                        <label className="block text-[11px] font-black text-slate-400 uppercase tracking-widest mb-2 ml-1">輸入您原本的金鑰</label>
                                                 <input type="text" value={loginKey} onChange={(e) => setLoginKey(e.target.value.toUpperCase())} placeholder="PHY-XXXXXXXX" className="w-full p-4 bg-slate-50 border-2 border-slate-200 rounded-2xl font-black outline-none focus:border-indigo-400 transition-colors text-center tracking-widest uppercase" />
                                             </div>
                                         )}
@@ -1383,6 +1399,11 @@
                                             <div className="space-y-2">
                                                 <label className="block text-[11px] font-black text-slate-400 uppercase tracking-widest text-center">請輸入您的 10 碼帳號以確認銷毀</label>
                                                 <input type="number" value={deleteAccountInput} onChange={(e)=>setDeleteAccountInput(e.target.value)} placeholder="手機末 6 碼 + 生日 4 碼" className="w-full p-4 bg-slate-50 border-2 border-slate-200 rounded-2xl font-black outline-none focus:border-rose-400 transition-colors text-center tracking-widest" />
+                                                
+                                                {/* 🌟 核心修復：在刪除帳號面板也加入清晰的具體數字範例 */}
+                                                <p className="text-[10px] text-slate-400 mt-2 font-bold px-1 leading-relaxed text-center">
+                                                    💡 範例：手機 0912-345-678，生日 5月12日，請輸入 <span className="text-rose-500 font-black">3456780512</span>。
+                                                </p>
                                             </div>
                                             
                                             {deleteAccountError && <div className="text-[11px] font-bold text-rose-500 bg-rose-50 py-3 px-4 rounded-xl border border-rose-100 text-center">{deleteAccountError}</div>}
