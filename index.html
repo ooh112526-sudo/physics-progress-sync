@@ -1567,7 +1567,14 @@
                                                     {['exam1','exam2','exam3'].map(k=>{ 
                                                         const dates = formData.examData[activeSettingTab][k] || [];
                                                         return (
-                                                            <button key={k} onClick={()=>setActiveExamKey(k)} className={`relative w-full flex items-center justify-between p-4 rounded-2xl border-2 transition-all ${activeExamKey===k?'border-indigo-400 bg-indigo-50 shadow-sm':'border-slate-50 bg-slate-50'}`}>
+                                                            // 🌟 核心升級：加裝「自動導航雷達」。點擊按鈕時，若該段考已有日期，則自動抓取第一個日期的年月並進行跳轉。
+                                                            <button key={k} onClick={() => {
+                                                                setActiveExamKey(k);
+                                                                if (dates.length > 0) {
+                                                                    const [y, m] = dates[0].split('-');
+                                                                    setViewDate(new Date(parseInt(y), parseInt(m) - 1, 1));
+                                                                }
+                                                            }} className={`relative w-full flex items-center justify-between p-4 rounded-2xl border-2 transition-all ${activeExamKey===k?'border-indigo-400 bg-indigo-50 shadow-sm':'border-slate-50 bg-slate-50'}`}>
                                                                 <span className="text-xs font-black text-slate-600">{k==='exam1'?'段考一':k==='exam2'?'段考二':'段考三'}</span>
                                                                 {dates.length > 0 && <span className="absolute left-1/2 -translate-x-1/2 text-[10px] font-bold text-slate-400 tracking-wider">{formatDatesForDisplay(dates)}</span>}
                                                                 <span className="text-[10px] font-bold text-indigo-500 bg-white px-2 py-1 rounded-full shadow-sm">{dates.length} 天</span>
