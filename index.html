@@ -31,11 +31,10 @@
 
     <script type="module">
         import { initializeApp } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-app.js";
-        // 🌟 核心升級 1：引入 browserLocalPersistence，確保持久化登入
         import { getAuth, signInAnonymously, onAuthStateChanged, setPersistence, browserLocalPersistence } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-auth.js";
-        // 🌟 核心升級 2：引入 getDoc，用於查閱金鑰對照表
         import { getFirestore, doc, setDoc, getDoc, onSnapshot } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-firestore.js";
 
+        // 老師專屬金鑰
         const firebaseConfig = {
             apiKey: "AIzaSyBduUmDpYh6lv8v-86Tmiay_8xe2dPmehI",
             authDomain: "physics-sync-2026.firebaseapp.com",
@@ -47,7 +46,6 @@
         
         try {
             const app = initializeApp(firebaseConfig);
-            // 🌟 將新引入的函數掛載到 window.firebase 上
             window.firebase = { auth: getAuth(app), db: getFirestore(app), currentAppId: "physics-sync-2026", signInAnonymously, onAuthStateChanged, setPersistence, browserLocalPersistence, doc, setDoc, getDoc, onSnapshot };
             window.firebaseReady = true; window.dispatchEvent(new Event('firebaseReady'));
         } catch (e) { console.error("Firebase Init Error:", e); }
@@ -55,7 +53,7 @@
 
     <script type="text/babel">
         const { useState, useEffect, useMemo, Fragment } = React;
-        const APP_VERSION = "v9.8.0 (設備指紋永久連線版)";
+        const APP_VERSION = "v9.8.5 (雙重記憶保險無縫連線版)";
 
         const THEME_COLORS = [
             { id: 'sky', name: '晴空水藍', h: 199, s: 89, base: 'bg-sky-400', light: 'bg-sky-50', text: 'text-sky-800' },
@@ -85,12 +83,23 @@
             const [user, setUser] = useState(null);
             const [isCloudLoaded, setIsCloudLoaded] = useState(false);
             
-            // 🌟 核心升級 3：金鑰不再只依賴 Local Storage，改由狀態管理
-            const [syncKey, setSyncKey] = useState(null); 
+            // 🌟 第一道防線：同步從 LocalStorage 提取，確保網頁一刷新畫面絕對不空白
+            const [syncKey, setSyncKey] = useState(() => {
+                const savedKey = localStorage.getItem('physics_sync_key');
+                if (savedKey) return savedKey;
+                const newKey = 'PHY-' + Math.random().toString(36).substring(2, 10).toUpperCase();
+                localStorage.setItem('physics_sync_key', newKey);
+                return newKey;
+            });
+
+            // 只要 syncKey 有變動，立刻抄寫進口袋備忘錄
+            useEffect(() => {
+                if (syncKey) localStorage.setItem('physics_sync_key', syncKey);
+            }, [syncKey]);
+
             const [data, setData] = useState(initialData);
             const [isCopied, setIsCopied] = useState(false);
 
-            // ... (保留 selectedYear 等狀態) ...
             const [selectedYear, setSelectedYear] = useState(() => localStorage.getItem('physics_last_year') || "114");
             const [selectedSemester, setSelectedSemester] = useState(() => localStorage.getItem('physics_last_sem') || "下學期");
             const [selectedCourseId, setSelectedCourseId] = useState(() => localStorage.getItem('physics_last_course') || null);
@@ -114,11 +123,10 @@
 
             useEffect(() => { const h = () => setIsFirebaseReady(true); window.addEventListener('firebaseReady', h); return () => window.removeEventListener('firebaseReady', h); }, []);
             
-            // 🌟 核心升級 4：啟動永久通行證與金鑰對照機制
+            // 🌟 第二道防線：Firebase Auth 持久化登入與雲端身分校對
             useEffect(() => { 
                 if (!isFirebaseReady || !window.firebase) return; 
 
-                // 設定登入狀態持久化 (存在手機最深層的 IndexedDB 裡)
                 window.firebase.setPersistence(window.firebase.auth, window.firebase.browserLocalPersistence)
                     .then(() => {
                         return window.firebase.signInAnonymously(window.firebase.auth);
@@ -128,38 +136,29 @@
                 const unsub = window.firebase.onAuthStateChanged(window.firebase.auth, async (currentUser) => {
                     setUser(currentUser);
                     if (currentUser) {
-                        // 當使用者登入成功，去雲端「金鑰對照表」查詢他的專屬金鑰
                         const userKeyRef = window.firebase.doc(window.firebase.db, 'artifacts', window.firebase.currentAppId, 'users', currentUser.uid, 'settings');
                         const userKeySnap = await window.firebase.getDoc(userKeyRef);
                         
-                        let currentKey = null;
-
                         if (userKeySnap.exists() && userKeySnap.data().syncKey) {
-                            // 情況 A：雲端有紀錄，直接取用雲端金鑰 (即使手機 Local Storage 被洗掉也沒關係)
-                            currentKey = userKeySnap.data().syncKey;
-                        } else {
-                            // 情況 B：全新用戶，或雲端沒紀錄
-                            // 先看 Local Storage 有沒有舊的
-                            const savedKey = localStorage.getItem('physics_sync_key');
-                            if (savedKey) {
-                                currentKey = savedKey;
-                            } else {
-                                // 真的什麼都沒有，才發給他一把新鑰匙
-                                currentKey = 'PHY-' + Math.random().toString(36).substring(2, 10).toUpperCase();
+                            const cloudKey = userKeySnap.data().syncKey;
+                            // 如果雲端記得的金鑰，跟手機口袋裡的不一樣（代表口袋曾被洗掉又亂產生），強行以雲端為準！
+                            if (cloudKey !== localStorage.getItem('physics_sync_key')) {
+                                setIsCloudLoaded(false); // 煞車
+                                setSyncKey(cloudKey);    // 覆寫
                             }
-                            // 立刻把這把新/舊鑰匙，跟他的永久通行證綁定，存上雲端！
-                            await window.firebase.setDoc(userKeyRef, { syncKey: currentKey }, { merge: true });
+                        } else {
+                            // 全新用戶：把第一道防線產生的 Local 金鑰，燒錄進雲端晶片綁定
+                            const currentLocalKey = localStorage.getItem('physics_sync_key');
+                            if (currentLocalKey) {
+                                await window.firebase.setDoc(userKeyRef, { syncKey: currentLocalKey }, { merge: true });
+                            }
                         }
-
-                        // 更新系統狀態與 Local Storage (做雙重保險)
-                        setSyncKey(currentKey);
-                        localStorage.setItem('physics_sync_key', currentKey);
                     }
                 }); 
                 return () => unsub(); 
             }, [isFirebaseReady]);
 
-            // 🌟 核心升級 5：下載引擎與上傳引擎，必須等 syncKey 確認後才啟動
+            // 📥 下載引擎
             useEffect(() => {
                 if (!user || !syncKey || !isFirebaseReady || !window.firebase) return; 
                 const docRef = window.firebase.doc(window.firebase.db, 'artifacts', window.firebase.currentAppId, 'public', 'data', 'shared_progress', syncKey);
@@ -174,12 +173,12 @@
                 return () => unsub();
             }, [user, syncKey, isFirebaseReady]); 
             
+            // 📤 上傳引擎
             useEffect(() => {
                 if (!user || !isCloudLoaded || !syncKey || !window.firebase) return;
                 window.firebase.setDoc(window.firebase.doc(window.firebase.db, 'artifacts', window.firebase.currentAppId, 'public', 'data', 'shared_progress', syncKey), { appData: data }, { merge: true }).catch(e=>console.error(e));
             }, [data, user, isCloudLoaded, syncKey]);
 
-            // ... (保留後續所有程式碼) ...
             const [isSidebarOpen, setIsSidebarOpen] = useState(false);
             const [isModalOpen, setIsModalOpen] = useState(false);
             const [modalType, setModalType] = useState(''); 
@@ -213,7 +212,6 @@
             const formatDateKey = (d) => `${d.getFullYear()}-${(d.getMonth() + 1).toString().padStart(2, '0')}-${d.getDate().toString().padStart(2, '0')}`;
             const isToday = (date) => formatDateKey(date) === formatDateKey(new Date());
 
-            // 🌟 核心引擎：儀表板左右切換邏輯
             const currentCourseIndex = currentCourses.findIndex(c => c.id === selectedCourseId);
             const hasPrevCourse = currentCourseIndex > 0;
             const hasNextCourse = currentCourseIndex < currentCourses.length - 1;
@@ -221,7 +219,6 @@
             const goToPrevCourse = () => { if (hasPrevCourse) setSelectedCourseId(currentCourses[currentCourseIndex - 1].id); };
             const goToNextCourse = () => { if (hasNextCourse) setSelectedCourseId(currentCourses[currentCourseIndex + 1].id); };
 
-            // 🌟 觸控座標追蹤器
             const [touchStart, setTouchStart] = useState(null);
             const [touchEnd, setTouchEnd] = useState(null);
 
@@ -237,12 +234,12 @@
             const onTouchEnd = () => {
                 if (!touchStart || !touchEnd) return;
                 const distance = touchStart - touchEnd;
-                const minSwipeDistance = 50; // 只要滑動超過 50 像素就判定為切換
+                const minSwipeDistance = 50; 
                 
                 if (distance > minSwipeDistance) {
-                    goToNextCourse(); // 向左滑，下一堂
+                    goToNextCourse(); 
                 } else if (distance < -minSwipeDistance) {
-                    goToPrevCourse(); // 向右滑，上一堂
+                    goToPrevCourse(); 
                 }
             };
 
@@ -467,7 +464,6 @@
                             }
 
                             result.push({
-                                // 🌟 核心修復 1：將 courseId (課程身分證) 打包進卡片中，讓它知道自己是誰
                                 ...cls, period: p, courseId: course.id, courseTheme: THEME_COLORS.find(t => t.id === course.themeId),
                                 hasLog: hasLog, isSpecialEvent, logPrefix, logText,
                                 isHoliday: !!holidayObj, holidayDesc: holidayObj?.desc,
@@ -488,14 +484,12 @@
                     setEditingCell({ classId: extra.cls.id, date: dateStr, period: extra.period, block: block }); 
                     setEditingClassId(extra.cls.id); 
                     
-                    // 🌟 核心修復 2：跨課程時空錯亂校正。找出點擊的班級真正屬於哪個課程，並自動切換系統焦點
                     const targetCourse = currentCourses.find(c => c.id === extra.courseId);
                     if (targetCourse) setSelectedCourseId(targetCourse.id);
 
                     const existingLog = extra.cls.logs.find(l => l.date === dateStr && l.period === extra.period); 
                     const firstChapter = targetCourse?.syllabus?.exam1?.[0]?.title || '';
                     
-                    // 🌟 核心修復 3：歷史排序校正。捨棄抓陣列末端的笨方法，改為尋找時間軸上「最接近且早於目前」的真實紀錄
                     const pastLogs = extra.cls.logs.filter(l => { 
                         if (l.date < dateStr) return true; 
                         if (l.date === dateStr && l.period < Math.min(...block)) return true; 
@@ -759,8 +753,6 @@
                                         </button>
                                     </div>
                                 </div>
-                                
-                                {/* 🌟 核心升級：手機版的雲端狀態，改為點擊可開啟同步視窗的「金鑰識別牌」 */}
                                 <div className="flex md:hidden items-center px-2">
                                     <button onClick={() => openModal('devicePairing')} className="flex items-center gap-1.5 bg-slate-50 border border-slate-200 px-3 py-1.5 rounded-full active:scale-95 transition-all">
                                         {user && isCloudLoaded ? <i className="ph-fill ph-cloud-check text-emerald-500 text-base"></i> : <i className="ph-bold ph-cloud-slash text-slate-400 text-base animate-pulse"></i>}
@@ -788,8 +780,6 @@
                                         </div>
                                     </div>
                                 )}
-                                
-                                {/* 🌟 核心升級：電腦版的雲端狀態，同樣升級為「金鑰識別牌」 */}
                                 <div className="hidden md:flex items-center px-2">
                                     <button onClick={() => openModal('devicePairing')} className="flex items-center gap-2 bg-slate-50 border border-slate-200 px-4 py-2 rounded-full hover:bg-slate-100 hover:border-indigo-200 transition-all group">
                                         {user && isCloudLoaded ? <i className="ph-fill ph-cloud-check text-emerald-500 text-lg group-hover:scale-110 transition-transform"></i> : <i className="ph-bold ph-cloud-slash text-slate-400 text-lg animate-pulse"></i>}
@@ -802,7 +792,6 @@
                             </div>
                         </div>
 
-                        {/* 🌟 核心修復：在儀表板主容器掛上觸控追蹤器 (onTouch) */}
                         <div 
                             className="flex-1 overflow-auto p-2 md:p-4 lg:p-8 bg-slate-50/50"
                             onTouchStart={onTouchStart}
@@ -815,7 +804,6 @@
                                         <div className="space-y-6 md:space-y-8 animate-in">
                                             <div className="flex items-center gap-5 bg-white p-6 lg:p-8 rounded-[40px] shadow-sm border border-slate-100 relative overflow-hidden">
                                                 
-                                                {/* 🌟 UI 更新：為電腦版加入實體按鈕 (上一堂) */}
                                                 <div className="hidden md:flex absolute left-4 z-20">
                                                     <button onClick={goToPrevCourse} disabled={!hasPrevCourse} className="p-3 rounded-full bg-slate-50 text-slate-400 hover:text-indigo-600 hover:bg-indigo-50 disabled:opacity-30 disabled:hover:bg-slate-50 disabled:hover:text-slate-400 transition-all"><i className="ph-bold ph-caret-left text-xl"></i></button>
                                                 </div>
@@ -830,7 +818,6 @@
                                                     </div>
                                                 </div>
 
-                                                {/* 🌟 UI 更新：為電腦版加入實體按鈕 (下一堂) */}
                                                 <div className="hidden md:flex absolute right-4 z-20">
                                                     <button onClick={goToNextCourse} disabled={!hasNextCourse} className="p-3 rounded-full bg-slate-50 text-slate-400 hover:text-indigo-600 hover:bg-indigo-50 disabled:opacity-30 disabled:hover:bg-slate-50 disabled:hover:text-slate-400 transition-all"><i className="ph-bold ph-caret-right text-xl"></i></button>
                                                 </div>
@@ -838,7 +825,6 @@
                                                 <div className={`absolute top-0 right-0 w-32 h-32 opacity-5 rounded-full -mr-10 -mt-10 ${currentTheme.base}`}></div>
                                             </div>
                                             
-                                            {/* 🌟 UI 更新：加入底部小圓點指示器 (Carousel Dots) */}
                                             <div className="flex justify-center gap-1.5 mt-2 mb-4">
                                                 {currentCourses.map((c, i) => (
                                                     <span key={c.id} className={`h-1.5 rounded-full transition-all duration-300 ${i === currentCourseIndex ? 'w-4 bg-indigo-500' : 'w-1.5 bg-slate-300'}`}></span>
@@ -955,7 +941,6 @@
                                                                                 else if (cls.hasLog) { bgClass = 'bg-sky-50 border-sky-200 shadow-sm'; }
 
                                                                                 return (
-                                                                                    // 🌟 核心修復 4：Day View 日視圖點擊時，一併發送 courseId 參數
                                                                                     <button key={cls.id} onClick={() => !isBlocked && openModal('classJournal', {cls, date: currentDate, period: p, courseId: cls.courseId})} className={`w-full p-4 md:p-5 rounded-[24px] text-left transition-all border-2 relative overflow-hidden flex flex-col justify-center ${bgClass}`}>
                                                                                         <div className="flex items-center gap-2 mb-1">
                                                                                             <span className={`w-2.5 h-2.5 rounded-full ${cls.courseTheme.base}`}></span>
@@ -1019,7 +1004,6 @@
                                                                                 else if (!cls.hasLog) { bgClass = 'bg-white border-slate-100 hover:shadow-md'; }
 
                                                                                 return (
-                                                                                    // 🌟 核心修復 5：Week View 週視圖點擊時，一併發送 courseId 參數
                                                                                     <button key={cls.id} onClick={() => !isBlocked && openModal('classJournal', {cls, date: d, period: p, courseId: cls.courseId})} className={`w-full p-3 rounded-[16px] text-left transition-all border relative overflow-hidden flex flex-col justify-center mb-1 last:mb-0 ${bgClass}`}>
                                                                                         <div className={`font-black text-[15px] leading-tight mb-1 ${titleColor}`}>{cls.name}</div>
                                                                                         <div className={`text-[11px] font-bold truncate ${descColor}`}>{descText}</div>
@@ -1178,13 +1162,16 @@
                                             <div className="flex gap-2">
                                                 <input type="text" value={inputSyncKey} onChange={(e)=>setInputSyncKey(e.target.value.toUpperCase())} placeholder="PHY-XXXXX" className="flex-1 p-4 bg-slate-50 border-2 rounded-2xl font-black text-center tracking-widest uppercase outline-none" />
                                                 <button onClick={async () => { 
-                                                    if(inputSyncKey.length > 3 && user){ 
-                                                        setIsCloudLoaded(false); 
+                                                    if(inputSyncKey.length > 3){ 
+                                                        setIsCloudLoaded(false); // 煞車
                                                         setSyncKey(inputSyncKey);
-                                                        localStorage.setItem('physics_sync_key', inputSyncKey);
-                                                        // 🌟 核心升級 6：手動輸入新金鑰時，也要同步更新雲端的「金鑰對照表」
-                                                        const userKeyRef = window.firebase.doc(window.firebase.db, 'artifacts', window.firebase.currentAppId, 'users', user.uid, 'settings');
-                                                        await window.firebase.setDoc(userKeyRef, { syncKey: inputSyncKey }, { merge: true });
+                                                        localStorage.setItem('physics_sync_key', inputSyncKey); // 第一道防線寫入
+                                                        
+                                                        if (user) {
+                                                            // 第二道防線燒錄
+                                                            const userKeyRef = window.firebase.doc(window.firebase.db, 'artifacts', window.firebase.currentAppId, 'users', user.uid, 'settings');
+                                                            await window.firebase.setDoc(userKeyRef, { syncKey: inputSyncKey }, { merge: true });
+                                                        }
                                                         setIsModalOpen(false); 
                                                     } 
                                                 }} className="px-6 bg-slate-800 text-white rounded-2xl font-black">連線</button>
