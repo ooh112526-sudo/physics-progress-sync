@@ -53,7 +53,7 @@
 
     <script type="text/babel">
         const { useState, useEffect, useMemo, Fragment } = React;
-        const APP_VERSION = "v9.8.5 (雙重記憶保險無縫連線版)";
+        const APP_VERSION = "v9.9.0 (公用電腦解除綁定版)";
 
         const THEME_COLORS = [
             { id: 'sky', name: '晴空水藍', h: 199, s: 89, base: 'bg-sky-400', light: 'bg-sky-50', text: 'text-sky-800' },
@@ -83,7 +83,6 @@
             const [user, setUser] = useState(null);
             const [isCloudLoaded, setIsCloudLoaded] = useState(false);
             
-            // 🌟 第一道防線：同步從 LocalStorage 提取，確保網頁一刷新畫面絕對不空白
             const [syncKey, setSyncKey] = useState(() => {
                 const savedKey = localStorage.getItem('physics_sync_key');
                 if (savedKey) return savedKey;
@@ -92,7 +91,6 @@
                 return newKey;
             });
 
-            // 只要 syncKey 有變動，立刻抄寫進口袋備忘錄
             useEffect(() => {
                 if (syncKey) localStorage.setItem('physics_sync_key', syncKey);
             }, [syncKey]);
@@ -123,7 +121,6 @@
 
             useEffect(() => { const h = () => setIsFirebaseReady(true); window.addEventListener('firebaseReady', h); return () => window.removeEventListener('firebaseReady', h); }, []);
             
-            // 🌟 第二道防線：Firebase Auth 持久化登入與雲端身分校對
             useEffect(() => { 
                 if (!isFirebaseReady || !window.firebase) return; 
 
@@ -141,13 +138,11 @@
                         
                         if (userKeySnap.exists() && userKeySnap.data().syncKey) {
                             const cloudKey = userKeySnap.data().syncKey;
-                            // 如果雲端記得的金鑰，跟手機口袋裡的不一樣（代表口袋曾被洗掉又亂產生），強行以雲端為準！
                             if (cloudKey !== localStorage.getItem('physics_sync_key')) {
-                                setIsCloudLoaded(false); // 煞車
-                                setSyncKey(cloudKey);    // 覆寫
+                                setIsCloudLoaded(false); 
+                                setSyncKey(cloudKey);    
                             }
                         } else {
-                            // 全新用戶：把第一道防線產生的 Local 金鑰，燒錄進雲端晶片綁定
                             const currentLocalKey = localStorage.getItem('physics_sync_key');
                             if (currentLocalKey) {
                                 await window.firebase.setDoc(userKeyRef, { syncKey: currentLocalKey }, { merge: true });
@@ -158,7 +153,6 @@
                 return () => unsub(); 
             }, [isFirebaseReady]);
 
-            // 📥 下載引擎
             useEffect(() => {
                 if (!user || !syncKey || !isFirebaseReady || !window.firebase) return; 
                 const docRef = window.firebase.doc(window.firebase.db, 'artifacts', window.firebase.currentAppId, 'public', 'data', 'shared_progress', syncKey);
@@ -173,11 +167,29 @@
                 return () => unsub();
             }, [user, syncKey, isFirebaseReady]); 
             
-            // 📤 上傳引擎
             useEffect(() => {
                 if (!user || !isCloudLoaded || !syncKey || !window.firebase) return;
                 window.firebase.setDoc(window.firebase.doc(window.firebase.db, 'artifacts', window.firebase.currentAppId, 'public', 'data', 'shared_progress', syncKey), { appData: data }, { merge: true }).catch(e=>console.error(e));
             }, [data, user, isCloudLoaded, syncKey]);
+
+            // 🌟 核心引擎：公用電腦登出機制 (三步抹除法)
+            const handleLogoutAndClear = async () => {
+                if (!window.confirm('⚠️ 確定要解除綁定此設備嗎？\n\n這將清除此電腦上的連線紀錄與畫面資料，但您的雲端資料「絕對安全」。\n\n(非常適合在公用講桌電腦使用完畢後點擊)')) return;
+                
+                // 1. 銷毀雲端身分晶片
+                if (window.firebase && window.firebase.auth) {
+                    await window.firebase.auth.signOut();
+                }
+
+                // 2. 清空瀏覽器口袋
+                localStorage.removeItem('physics_sync_key');
+                localStorage.removeItem('physics_last_year');
+                localStorage.removeItem('physics_last_sem');
+                localStorage.removeItem('physics_last_course');
+
+                // 3. 強制網頁大腦重開機，回到全新出廠狀態
+                window.location.reload();
+            };
 
             const [isSidebarOpen, setIsSidebarOpen] = useState(false);
             const [isModalOpen, setIsModalOpen] = useState(false);
@@ -1163,18 +1175,25 @@
                                                 <input type="text" value={inputSyncKey} onChange={(e)=>setInputSyncKey(e.target.value.toUpperCase())} placeholder="PHY-XXXXX" className="flex-1 p-4 bg-slate-50 border-2 rounded-2xl font-black text-center tracking-widest uppercase outline-none" />
                                                 <button onClick={async () => { 
                                                     if(inputSyncKey.length > 3){ 
-                                                        setIsCloudLoaded(false); // 煞車
+                                                        setIsCloudLoaded(false); 
                                                         setSyncKey(inputSyncKey);
-                                                        localStorage.setItem('physics_sync_key', inputSyncKey); // 第一道防線寫入
+                                                        localStorage.setItem('physics_sync_key', inputSyncKey);
                                                         
                                                         if (user) {
-                                                            // 第二道防線燒錄
                                                             const userKeyRef = window.firebase.doc(window.firebase.db, 'artifacts', window.firebase.currentAppId, 'users', user.uid, 'settings');
                                                             await window.firebase.setDoc(userKeyRef, { syncKey: inputSyncKey }, { merge: true });
                                                         }
                                                         setIsModalOpen(false); 
                                                     } 
                                                 }} className="px-6 bg-slate-800 text-white rounded-2xl font-black">連線</button>
+                                            </div>
+                                            
+                                            {/* 🌟 核心升級：公用電腦緊急按鈕 */}
+                                            <div className="pt-4 border-t border-slate-100">
+                                                <button onClick={handleLogoutAndClear} className="w-full py-4 bg-rose-50 border border-rose-100 text-rose-500 font-black rounded-2xl hover:bg-rose-500 hover:text-white transition-all flex justify-center items-center gap-2">
+                                                    <i className="ph-bold ph-plug-x text-lg"></i> 解除綁定此設備 (適合公用電腦)
+                                                </button>
+                                                <p className="text-[10px] text-slate-400 text-center mt-3 font-bold">點擊後將登出並清除這台電腦上的暫存畫面，但<span className="text-emerald-500">雲端資料不會受到任何影響</span>。</p>
                                             </div>
                                         </div>
                                     )}
