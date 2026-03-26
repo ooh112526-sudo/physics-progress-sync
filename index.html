@@ -604,7 +604,8 @@
                     let lastExamDateStr = null;
                     
                     for (const d of allExamDates) { 
-                        if (d >= snapshotStr) { 
+                        // 🌟 [核心修改目標 1]：修正時間雷達基準，改用真實的今天 (realTodayStr) 判斷，確保段考一結束後立即切換至二段區間
+                        if (d >= realTodayStr) { 
                             if (!nextExamDateStr) nextExamDateStr = d; 
                         } else {
                             lastExamDateStr = d;
@@ -628,7 +629,9 @@
                         for (let d = new Date(pStart); d < pEnd; d.setDate(d.getDate() + 1)) {
                             const dStr = formatDateKey(d); 
                             const dayOfWeek = d.getDay();
-                            if (dayOfWeek === 0 || dayOfWeek === 6 || getHoliday(dStr) || getExamName(dStr, currentCourse.system, currentSemesterData.settings)) continue;
+                            
+                            // 🌟 [核心修改目標 2]：移除硬編碼的週末排除限制，完全信任課表設定，以完美支援週末補課
+                            if (getHoliday(dStr) || getExamName(dStr, currentCourse.system, currentSemesterData.settings)) continue;
                             
                             const scheds = cls.schedule?.filter(s => s.day === dayOfWeek) || [];
                             totalPeriods += scheds.length;
@@ -643,9 +646,16 @@
                         globalDaysToExam = Math.ceil((endDate - realToday) / (1000 * 60 * 60 * 24));
                         for (let d = new Date(snapshotDate); d < endDate; d.setDate(d.getDate() + 1)) {
                             const dStr = formatDateKey(d); const dayOfWeek = d.getDay();
-                            if (dayOfWeek === 0 || dayOfWeek === 6 || getHoliday(dStr) || getExamName(dStr, currentCourse.system, currentSemesterData.settings)) continue;
+                            
+                            // 🌟 [核心修改目標 2 配合]：同樣移除快照迴圈中的週末排除
+                            if (getHoliday(dStr) || getExamName(dStr, currentCourse.system, currentSemesterData.settings)) continue;
+                            
                             const scheds = cls.schedule?.filter(s => s.day === dayOfWeek) || [];
-                            scheds.forEach(s => { const existingLog = cls.logs?.find(l => l.date === dStr && l.period === s.period); if (!existingLog || !existingLog.event) remainingPeriods++; });
+                            scheds.forEach(s => { 
+                                const existingLog = cls.logs?.find(l => l.date === dStr && l.period === s.period); 
+                                // 🌟 [核心修改目標 3]：修正剩餘未教節數判定。只要有填日誌(包含小考實驗)，該節課就算消耗，不應加回未教節數
+                                if (!existingLog) remainingPeriods++; 
+                            });
                         }
                     }
                     
