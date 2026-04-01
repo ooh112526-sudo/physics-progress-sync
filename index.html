@@ -64,7 +64,7 @@
 
     <script type="text/babel">
         const { useState, useEffect, useMemo, Fragment } = React;
-        const APP_VERSION = "v11.0.0 (視覺化賽道系統 V1.0)"; // 🌟 [修改目標] 更新版本號
+        const APP_VERSION = "v11.0.1 (視覺化賽道系統 V1.2 - 修復圖層遮擋)"; // 🌟 [修改目標] 更新版本號
 
         const THEME_COLORS = [
             { id: 'sky', name: '晴空水藍', h: 199, s: 89, base: 'bg-sky-400', light: 'bg-sky-50', text: 'text-sky-800' },
@@ -1240,7 +1240,7 @@
                                                                      left: `${Math.min(cls.x, 98)}%`, // X軸定位
                                                                      bottom: '16px', // 從賽道中央起算
                                                                      paddingBottom: `${cls.yLevel * 45}px`, // 依樓層撐高
-                                                                     zIndex: 50 - cls.yLevel, // 🌟 圖層反轉魔法！
+                                                                     zIndex: 20 - cls.yLevel, // 🌟 [核心修改目標] 降低基礎圖層數值，避免蓋過側邊欄 (原為 50，改為 20)
                                                                      transform: 'translateX(-50%)'
                                                                  }}>
                                                                 
