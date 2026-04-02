@@ -25,16 +25,9 @@
         .ph-bold, .ph-fill { display: inline-block; vertical-align: middle; }
         .native-touch { -webkit-touch-callout: none; user-select: none; }
         
-        /* 🌟 核心修復：強制隱藏數字輸入框的預設上下箭頭 (Chrome, Safari, Edge) */
         input::-webkit-outer-spin-button,
-        input::-webkit-inner-spin-button {
-            -webkit-appearance: none;
-            margin: 0;
-        }
-        /* 🌟 核心修復：強制隱藏數字輸入框的預設上下箭頭 (Firefox) */
-        input[type=number] {
-            -moz-appearance: textfield;
-        }
+        input::-webkit-inner-spin-button { -webkit-appearance: none; margin: 0; }
+        input[type=number] { -moz-appearance: textfield; }
     </style>
 </head>
 <body class="bg-slate-50">
@@ -45,7 +38,6 @@
         import { getAuth, signInAnonymously, onAuthStateChanged, setPersistence, browserLocalPersistence } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-auth.js";
         import { getFirestore, doc, setDoc, getDoc, onSnapshot, deleteDoc } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-firestore.js";
 
-        // 老師專屬金鑰
         const firebaseConfig = {
             apiKey: "AIzaSyBduUmDpYh6lv8v-86Tmiay_8xe2dPmehI",
             authDomain: "physics-sync-2026.firebaseapp.com",
@@ -64,7 +56,8 @@
 
     <script type="text/babel">
         const { useState, useEffect, useMemo, Fragment } = React;
-        const APP_VERSION = "v11.0.1 (視覺化賽道系統 V1.2 - 修復圖層遮擋)"; // 🌟 [修改目標] 更新版本號
+        // 🌟 [核心修改目標] 升級版本號
+        const APP_VERSION = "v11.1.0 (雙重時光機自動備份版)"; 
 
         const THEME_COLORS = [
             { id: 'sky', name: '晴空水藍', h: 199, s: 89, base: 'bg-sky-400', light: 'bg-sky-50', text: 'text-sky-800' },
@@ -93,13 +86,10 @@
             const [isFirebaseReady, setIsFirebaseReady] = useState(window.firebaseReady || false);
             const [user, setUser] = useState(null);
             const [isCloudLoaded, setIsCloudLoaded] = useState(false);
-            
-            // 🌟 核心防線 1：建立「髒標記 (Dirty Flag)」狀態
             const [hasLocalChanges, setHasLocalChanges] = useState(false);
 
             const [isCheckingAuth, setIsCheckingAuth] = useState(true); 
             const [requireLogin, setRequireLogin] = useState(false);    
-            
             const [syncKey, setSyncKey] = useState(() => localStorage.getItem('physics_sync_key') || null);
 
             const [loginTab, setLoginTab] = useState('account');
@@ -108,21 +98,21 @@
             const [loginError, setLoginError] = useState('');
             const [isProcessingLogin, setIsProcessingLogin] = useState(false);
 
-            // 🌟 核心防線 2：打造手動操作專用的「資料更新通道」，所有老師的手動操作都必須走這個通道並蓋上髒標記
+            // 🌟 備份相關 State
+            const [cloudBackups, setCloudBackups] = useState({});
+            const [localBackupTime, setLocalBackupTime] = useState(null);
+
             const updateLocalData = (newData) => {
                 setData(newData);
-                setHasLocalChanges(true); // 蓋上「已被手動修改」的印章
+                setHasLocalChanges(true); 
             };
 
             const [pendingNewAccount, setPendingNewAccount] = useState(null);
-
             const [deleteAccountInput, setDeleteAccountInput] = useState('');
             const [deleteAccountError, setDeleteAccountError] = useState('');
             const [isProcessingDelete, setIsProcessingDelete] = useState(false);
 
-            useEffect(() => {
-                if (syncKey) localStorage.setItem('physics_sync_key', syncKey);
-            }, [syncKey]);
+            useEffect(() => { if (syncKey) localStorage.setItem('physics_sync_key', syncKey); }, [syncKey]);
 
             const [data, setData] = useState(initialData);
             const [isCopied, setIsCopied] = useState(false);
@@ -140,23 +130,33 @@
             useEffect(() => {
                 const currentSemesterCourses = data[selectedYear]?.[selectedSemester]?.courses || [];
                 if (currentSemesterCourses.length > 0) {
-                    if (!selectedCourseId || !currentSemesterCourses.find(c => c.id === selectedCourseId)) {
-                        setSelectedCourseId(currentSemesterCourses[0].id);
-                    }
+                    if (!selectedCourseId || !currentSemesterCourses.find(c => c.id === selectedCourseId)) setSelectedCourseId(currentSemesterCourses[0].id);
                 } else {
                     setSelectedCourseId(null);
                 }
             }, [data, selectedYear, selectedSemester, selectedCourseId]);
 
+            // ==========================================
+            // 🛡️ 防線一：瀏覽器深層記憶保險箱 (自動存檔)
+            // ==========================================
+            useEffect(() => {
+                const isFactoryDefault = JSON.stringify(data) === JSON.stringify(initialData);
+                if (!isFactoryDefault) {
+                    try {
+                        localStorage.setItem('physics_auto_backup', JSON.stringify({
+                            time: new Date().toLocaleString('zh-TW'),
+                            appData: data
+                        }));
+                    } catch(e) { console.error('Local Backup Failed', e); }
+                }
+            }, [data]);
+
             useEffect(() => { const h = () => setIsFirebaseReady(true); window.addEventListener('firebaseReady', h); return () => window.removeEventListener('firebaseReady', h); }, []);
             
             useEffect(() => { 
                 if (!isFirebaseReady || !window.firebase) return; 
-
                 window.firebase.setPersistence(window.firebase.auth, window.firebase.browserLocalPersistence)
-                    .then(() => {
-                        return window.firebase.signInAnonymously(window.firebase.auth);
-                    })
+                    .then(() => window.firebase.signInAnonymously(window.firebase.auth))
                     .catch(e => console.error("Auth Error:", e));
 
                 const unsub = window.firebase.onAuthStateChanged(window.firebase.auth, async (currentUser) => {
@@ -164,23 +164,16 @@
                     if (currentUser) {
                         const userKeyRef = window.firebase.doc(window.firebase.db, 'artifacts', window.firebase.currentAppId, 'users', currentUser.uid, 'data', 'settings');
                         const userKeySnap = await window.firebase.getDoc(userKeyRef);
-                        
                         if (userKeySnap.exists() && userKeySnap.data().syncKey) {
                             const cloudKey = userKeySnap.data().syncKey;
                             if (cloudKey !== localStorage.getItem('physics_sync_key')) {
-                                setIsCloudLoaded(false); 
-                                setSyncKey(cloudKey);    
-                                localStorage.setItem('physics_sync_key', cloudKey);
+                                setIsCloudLoaded(false); setSyncKey(cloudKey); localStorage.setItem('physics_sync_key', cloudKey);
                             }
                             setRequireLogin(false);
                         } else {
                             const currentLocalKey = localStorage.getItem('physics_sync_key');
-                            if (currentLocalKey) {
-                                await window.firebase.setDoc(userKeyRef, { syncKey: currentLocalKey }, { merge: true });
-                                setRequireLogin(false);
-                            } else {
-                                setRequireLogin(true);
-                            }
+                            if (currentLocalKey) { await window.firebase.setDoc(userKeyRef, { syncKey: currentLocalKey }, { merge: true }); setRequireLogin(false); } 
+                            else { setRequireLogin(true); }
                         }
                         setIsCheckingAuth(false);
                     }
@@ -193,9 +186,32 @@
                 const docRef = window.firebase.doc(window.firebase.db, 'artifacts', window.firebase.currentAppId, 'public', 'data', 'shared_progress', syncKey);
                 const unsub = window.firebase.onSnapshot(docRef, 
                     (docSnap) => {
-                        // 📥 下載引擎：來自雲端的資料，只使用基礎的 setData，『不會』觸發髒標記
-                        if (docSnap.exists() && docSnap.data().appData) setData(prev => JSON.stringify(prev) === JSON.stringify(docSnap.data().appData) ? prev : docSnap.data().appData);
+                        const cloudData = docSnap.data();
+                        if (cloudData && cloudData.appData) setData(prev => JSON.stringify(prev) === JSON.stringify(cloudData.appData) ? prev : cloudData.appData);
                         else window.firebase.setDoc(docRef, { appData: initialData }, { merge: true }).catch(()=>{});
+                        
+                        // ==========================================
+                        // ☁️ 防線二：雲端每日快照與 7 天淘汰輸送帶
+                        // ==========================================
+                        if (cloudData) {
+                            setCloudBackups(cloudData.backups || {}); // 供 UI 面板使用
+                            
+                            const d = new Date();
+                            const todayStr = `${d.getFullYear()}-${(d.getMonth() + 1).toString().padStart(2, '0')}-${d.getDate().toString().padStart(2, '0')}`;
+                            
+                            // 每天只在第一次抓到進度時，留下一份底稿
+                            if (cloudData.appData && (!cloudData.backups || !cloudData.backups[todayStr])) {
+                                const newBackups = { ...(cloudData.backups || {}), [todayStr]: cloudData.appData };
+                                
+                                // 🌟 [核心修改目標] 最多保留 7 天 (Sorting 之後切刀 slice)
+                                const sortedKeys = Object.keys(newBackups).sort((a, b) => b.localeCompare(a));
+                                const trimmedBackups = {};
+                                sortedKeys.slice(0, 7).forEach(k => { trimmedBackups[k] = newBackups[k]; });
+                                
+                                window.firebase.setDoc(docRef, { backups: trimmedBackups }, { merge: true }).catch(e => console.error(e));
+                            }
+                        }
+
                         setIsCloudLoaded(true);
                     },
                     (err) => { console.error(err); setIsCloudLoaded(false); }
@@ -203,163 +219,87 @@
                 return () => unsub(); 
             }, [requireLogin, user, syncKey, isFirebaseReady]); 
             
-            // 📤 升級版上傳引擎
             useEffect(() => {
                 if (requireLogin || !user || !isCloudLoaded || !syncKey || !window.firebase) return;
-                
-                // 🛡️ 防線一 (方案一)：如果沒有「髒標記」，代表是剛開機或剛下載完，嚴格禁止上傳！
                 if (!hasLocalChanges) return;
-
-                // 🛡️ 防線二 (方案二)：防護閘門，掃描即將上傳的資料是否為「出廠空白狀態」
                 const isFactoryDefault = JSON.stringify(data) === JSON.stringify(initialData);
-                if (isFactoryDefault) {
-                    console.warn("🛡️ 防護閘門啟動：偵測到異常的初始空白狀態，已阻擋覆寫雲端金庫！");
-                    return;
-                }
-
-                // 兩道防線皆通過，正式推上雲端
+                if (isFactoryDefault) return;
                 window.firebase.setDoc(window.firebase.doc(window.firebase.db, 'artifacts', window.firebase.currentAppId, 'public', 'data', 'shared_progress', syncKey), { appData: data }, { merge: true }).catch(e=>console.error(e));
             }, [requireLogin, data, user, isCloudLoaded, syncKey, hasLocalChanges]);
 
-            // 🌟 核心升級 2：拆分登入驗證與建立新帳號邏輯
             const handleExecuteLogin = async () => {
-                setLoginError('');
-                setIsProcessingLogin(true);
-
+                setLoginError(''); setIsProcessingLogin(true);
                 try {
                     let targetKey = '';
-
                     if (loginTab === 'account') {
-                        if (!/^\d{10}$/.test(loginAccountId)) {
-                            setLoginError('格式錯誤：請輸入手機末 6 碼 + 生日 4 碼 (共 10 碼數字)');
-                            setIsProcessingLogin(false);
-                            return;
-                        }
-
+                        if (!/^\d{10}$/.test(loginAccountId)) { setLoginError('格式錯誤：請輸入手機末 6 碼 + 生日 4 碼 (共 10 碼數字)'); setIsProcessingLogin(false); return; }
                         const accountRef = window.firebase.doc(window.firebase.db, 'artifacts', window.firebase.currentAppId, 'public', 'data', 'accounts', loginAccountId);
                         const accSnap = await window.firebase.getDoc(accountRef);
-
-                        if (accSnap.exists() && accSnap.data().syncKey) {
-                            // 情況 A：老手登入，直接取回鑰匙
-                            targetKey = accSnap.data().syncKey;
-                        } else {
-                            // 情況 B：新手註冊，🚨 觸發煞車防線！不立刻建立，而是進入確認模式
-                            setPendingNewAccount(loginAccountId);
-                            setIsProcessingLogin(false);
-                            return; // 提早結束，等待使用者二次確認
-                        }
+                        if (accSnap.exists() && accSnap.data().syncKey) { targetKey = accSnap.data().syncKey; } 
+                        else { setPendingNewAccount(loginAccountId); setIsProcessingLogin(false); return; }
                     } else {
                         const upperKey = loginKey.toUpperCase().trim();
-                        if (!upperKey.startsWith('PHY-') || upperKey.length < 8) {
-                            setLoginError('金鑰格式錯誤：請輸入 PHY- 開頭的正確金鑰');
-                            setIsProcessingLogin(false);
-                            return;
-                        }
+                        if (!upperKey.startsWith('PHY-') || upperKey.length < 8) { setLoginError('金鑰格式錯誤：請輸入 PHY- 開頭的正確金鑰'); setIsProcessingLogin(false); return; }
                         targetKey = upperKey;
                     }
-
-                    // 綁定舊帳號或金鑰登入的後續處理
                     const userKeyRef = window.firebase.doc(window.firebase.db, 'artifacts', window.firebase.currentAppId, 'users', user.uid, 'data', 'settings');
                     await window.firebase.setDoc(userKeyRef, { syncKey: targetKey }, { merge: true });
-
-                    localStorage.setItem('physics_sync_key', targetKey);
-                    setSyncKey(targetKey);
-                    setRequireLogin(false);
-                    
-                } catch (error) {
-                    console.error(error);
-                    setLoginError('連線錯誤，請稍後再試。');
-                }
-                
+                    localStorage.setItem('physics_sync_key', targetKey); setSyncKey(targetKey); setRequireLogin(false);
+                } catch (error) { setLoginError('連線錯誤，請稍後再試。'); }
                 setIsProcessingLogin(false);
             };
 
-            // 🌟 核心升級 3：使用者確認後，才真正建立帳號的執行函數
             const handleConfirmCreateAccount = async () => {
-                setLoginError('');
-                setIsProcessingLogin(true);
-
+                setLoginError(''); setIsProcessingLogin(true);
                 try {
-                    // 1. 產生新金鑰
                     const targetKey = 'PHY-' + Math.random().toString(36).substring(2, 10).toUpperCase();
-                    
-                    // 2. 寫入密碼本
                     const accountRef = window.firebase.doc(window.firebase.db, 'artifacts', window.firebase.currentAppId, 'public', 'data', 'accounts', pendingNewAccount);
                     await window.firebase.setDoc(accountRef, { syncKey: targetKey }, { merge: true });
-
-                    // 3. 寫入設備晶片
                     const userKeyRef = window.firebase.doc(window.firebase.db, 'artifacts', window.firebase.currentAppId, 'users', user.uid, 'data', 'settings');
                     await window.firebase.setDoc(userKeyRef, { syncKey: targetKey }, { merge: true });
-
-                    // 4. 更新本地口袋並放行
-                    localStorage.setItem('physics_sync_key', targetKey);
-                    setSyncKey(targetKey);
-                    setPendingNewAccount(null); // 清除懸停狀態
-                    setRequireLogin(false);
-
-                } catch (error) {
-                    console.error(error);
-                    setLoginError('建立帳號時發生錯誤，請稍後再試。');
-                }
-                
+                    localStorage.setItem('physics_sync_key', targetKey); setSyncKey(targetKey); setPendingNewAccount(null); setRequireLogin(false);
+                } catch (error) { setLoginError('建立帳號時發生錯誤，請稍後再試。'); }
                 setIsProcessingLogin(false);
             };
 
             const handleLogoutAndClear = async () => {
                 if (!window.confirm('⚠️ 確定要解除綁定此設備嗎？\n\n這將清除此電腦上的連線紀錄與畫面資料，但您的雲端資料「絕對安全」。\n\n(非常適合在公用講桌電腦使用完畢後點擊)')) return;
-                
-                if (window.firebase && window.firebase.auth) {
-                    await window.firebase.auth.signOut();
-                }
-
-                localStorage.removeItem('physics_sync_key');
-                localStorage.removeItem('physics_last_year');
-                localStorage.removeItem('physics_last_sem');
-                localStorage.removeItem('physics_last_course');
-
+                if (window.firebase && window.firebase.auth) await window.firebase.auth.signOut();
+                localStorage.removeItem('physics_sync_key'); localStorage.removeItem('physics_last_year'); localStorage.removeItem('physics_last_sem'); localStorage.removeItem('physics_last_course');
                 window.location.reload();
             };
 
             const handleNukeAccount = async () => {
-                setDeleteAccountError('');
-                setIsProcessingDelete(true);
-
+                setDeleteAccountError(''); setIsProcessingDelete(true);
                 try {
                     const accountRef = window.firebase.doc(window.firebase.db, 'artifacts', window.firebase.currentAppId, 'public', 'data', 'accounts', deleteAccountInput);
                     const accSnap = await window.firebase.getDoc(accountRef);
-
-                    if (!accSnap.exists() || accSnap.data().syncKey !== syncKey) {
-                        setDeleteAccountError('驗證失敗：此帳號不存在，或不屬於您當前登入的資料！');
-                        setIsProcessingDelete(false);
-                        return;
-                    }
-
+                    if (!accSnap.exists() || accSnap.data().syncKey !== syncKey) { setDeleteAccountError('驗證失敗：此帳號不存在，或不屬於您當前登入的資料！'); setIsProcessingDelete(false); return; }
                     const dataRef = window.firebase.doc(window.firebase.db, 'artifacts', window.firebase.currentAppId, 'public', 'data', 'shared_progress', syncKey);
                     await window.firebase.deleteDoc(dataRef);
-                    
                     await window.firebase.deleteDoc(accountRef);
-
-                    if (user) {
-                        const userKeyRef = window.firebase.doc(window.firebase.db, 'artifacts', window.firebase.currentAppId, 'users', user.uid, 'data', 'settings');
-                        await window.firebase.deleteDoc(userKeyRef);
-                    }
-
-                    localStorage.removeItem('physics_sync_key');
-                    localStorage.removeItem('physics_last_year');
-                    localStorage.removeItem('physics_last_sem');
-                    localStorage.removeItem('physics_last_course');
-                    
-                    if (window.firebase && window.firebase.auth) {
-                        await window.firebase.auth.signOut();
-                    }
-                    
+                    if (user) { const userKeyRef = window.firebase.doc(window.firebase.db, 'artifacts', window.firebase.currentAppId, 'users', user.uid, 'data', 'settings'); await window.firebase.deleteDoc(userKeyRef); }
+                    localStorage.removeItem('physics_sync_key'); localStorage.removeItem('physics_last_year'); localStorage.removeItem('physics_last_sem'); localStorage.removeItem('physics_last_course');
+                    if (window.firebase && window.firebase.auth) await window.firebase.auth.signOut();
                     window.location.reload();
+                } catch (err) { setDeleteAccountError('刪除過程發生錯誤，請稍後再試。'); setIsProcessingDelete(false); }
+            };
 
-                } catch (err) {
-                    console.error(err);
-                    setDeleteAccountError('刪除過程發生錯誤，請稍後再試。');
-                    setIsProcessingDelete(false);
-                }
+            // ==========================================
+            // ⏪ 時光機還原功能
+            // ==========================================
+            const handleRestoreLocal = () => {
+                if (!window.confirm('⚠️ 確定要時光倒流嗎？\n\n這將使用「本機深層記憶」覆寫您目前雲端上的所有進度！')) return;
+                try {
+                    const localB = localStorage.getItem('physics_auto_backup');
+                    const parsed = JSON.parse(localB);
+                    if (parsed && parsed.appData) { updateLocalData(parsed.appData); setIsModalOpen(false); }
+                } catch(e) { alert('還原失敗，檔案可能已損毀'); }
+            };
+
+            const handleRestoreCloud = (dateKey) => {
+                if (!window.confirm(`⚠️ 確定要時光倒流至「${dateKey}」嗎？\n\n這將覆寫您目前雲端上的所有進度！`)) return;
+                if (cloudBackups[dateKey]) { updateLocalData(cloudBackups[dateKey]); setIsModalOpen(false); }
             };
 
             const [isSidebarOpen, setIsSidebarOpen] = useState(false);
@@ -405,25 +345,13 @@
             const [touchStart, setTouchStart] = useState(null);
             const [touchEnd, setTouchEnd] = useState(null);
 
-            const onTouchStart = (e) => {
-                setTouchEnd(null);
-                setTouchStart(e.targetTouches[0].clientX);
-            };
-
-            const onTouchMove = (e) => {
-                setTouchEnd(e.targetTouches[0].clientX);
-            };
-
+            const onTouchStart = (e) => { setTouchEnd(null); setTouchStart(e.targetTouches[0].clientX); };
+            const onTouchMove = (e) => { setTouchEnd(e.targetTouches[0].clientX); };
             const onTouchEnd = () => {
                 if (!touchStart || !touchEnd) return;
                 const distance = touchStart - touchEnd;
-                const minSwipeDistance = 50; 
-                
-                if (distance > minSwipeDistance) {
-                    goToNextCourse(); 
-                } else if (distance < -minSwipeDistance) {
-                    goToPrevCourse(); 
-                }
+                if (distance > 50) goToNextCourse(); 
+                else if (distance < -50) goToPrevCourse(); 
             };
 
             const getExamName = (dateKey, system, settings) => {
@@ -467,37 +395,25 @@
                 return new Date(y, parseInt(m, 10) - 1, parseInt(d, 10));
             };
 
-            // ==========================================
-            // 🏎️ 模組一：賽季自動判定器 (Season Auto-Selector)
-            // ==========================================
             const getCurrentExamTrack = (course, settings) => {
                 if (!course || !settings) return 'exam1';
                 const todayStr = formatDateKey(new Date());
                 let track = (course.system === '技高三' ? 'v3' : (course.system === '綜高三' ? 's3' : 'common'));
                 const trackData = settings[track] || {};
-                
                 const e1 = trackData.exam1?.length ? [...trackData.exam1].sort().pop() : null;
                 const e2 = trackData.exam2?.length ? [...trackData.exam2].sort().pop() : null;
-                
                 if (e1 && todayStr <= e1) return 'exam1';
                 if (e2 && todayStr <= e2) return 'exam2';
                 return 'exam3';
             };
 
-            // ==========================================
-            // 🏎️ 模組二 & 三：一維座標計算與貪婪防碰撞演算法
-            // ==========================================
             const raceTrackData = useMemo(() => {
                 if (!currentCourse || !currentCourse.syllabus) return null;
-                
-                // 1. 時間雷達掃描當前賽季
                 const activeExam = getCurrentExamTrack(currentCourse, currentSemesterData.settings);
                 const chapters = currentCourse.syllabus[activeExam] || [];
                 if (chapters.length === 0) return null;
 
                 const chapterWidth = 100 / chapters.length;
-
-                // 2. 空間座標計算 (算出每個班級的絕對 X 座標 0~100)
                 let classPositions = currentCourse.classes.map(cls => {
                     const validLogs = (cls.logs || []).filter(l => !l.event).sort((a, b) => {
                         if (a.date !== b.date) return a.date.localeCompare(b.date);
@@ -505,52 +421,38 @@
                     });
                     const latestLog = validLogs.length > 0 ? validLogs[validLogs.length - 1] : null;
 
-                    let xPos = 0;
-                    let currentChapterTitle = '無紀錄';
-                    let currentPage = 0;
+                    let xPos = 0; let currentChapterTitle = '無紀錄'; let currentPage = 0;
                     
                     if (latestLog) {
                         const chIndex = chapters.findIndex(ch => ch.title === latestLog.chapter);
                         if (chIndex !== -1) {
                             const chapterData = chapters[chIndex];
-                            // 🌟 核心防呆：優雅降級 (若未填頁數，大腦自動代換為 50 頁)
                             const totalPages = (chapterData.pages && chapterData.pages > 0) ? chapterData.pages : 50; 
                             currentPage = parseInt(latestLog.page) || 1;
                             const progress = Math.min(currentPage / totalPages, 1); 
                             xPos = (chIndex * chapterWidth) + (progress * chapterWidth);
                             currentChapterTitle = chapterData.title;
                         } else if (latestLog.chapter === '本次段考進度全數完成！') {
-                            xPos = 100;
-                            currentChapterTitle = '本段考已完結';
+                            xPos = 100; currentChapterTitle = '本段考已完結';
                         }
                     }
-
                     return { id: cls.id, name: cls.name, x: xPos, chapter: currentChapterTitle, page: currentPage, yLevel: 0 };
                 });
 
-                // 3. 防碰撞演算法 (Greedy Algorithm)
-                classPositions.sort((a, b) => a.x - b.x); // 由左至右排序
-                const FLAG_WIDTH_PERCENT = 14; // 停機坪安全間距 (約 14%)
-                let slots = []; // 紀錄每層樓目前被佔用的「最右邊界」
+                classPositions.sort((a, b) => a.x - b.x); 
+                const FLAG_WIDTH_PERCENT = 14; 
+                let slots = []; 
                 let maxLayer = 0;
 
                 classPositions.forEach(cls => {
                     let placed = false;
                     for (let layer = 0; layer < slots.length; layer++) {
-                        // 若這層樓的右邊界不會卡到我的左邊，成功降落！
                         if (slots[layer] <= cls.x) {
-                            cls.yLevel = layer;
-                            slots[layer] = cls.x + FLAG_WIDTH_PERCENT;
-                            placed = true;
-                            break;
+                            cls.yLevel = layer; slots[layer] = cls.x + FLAG_WIDTH_PERCENT; placed = true; break;
                         }
                     }
                     if (!placed) {
-                        // 每一層都滿了，往上蓋新樓層
-                        const newLayer = slots.length;
-                        cls.yLevel = newLayer;
-                        slots[newLayer] = cls.x + FLAG_WIDTH_PERCENT;
-                        maxLayer = newLayer;
+                        const newLayer = slots.length; cls.yLevel = newLayer; slots[newLayer] = cls.x + FLAG_WIDTH_PERCENT; maxLayer = newLayer;
                     }
                 });
 
@@ -559,13 +461,9 @@
 
             const healthData = useMemo(() => {
                 if (!currentCourse || !currentSemesterData.settings.startDate) return {};
-                
-                const realToday = new Date(); 
-                realToday.setHours(0,0,0,0);
-                
+                const realToday = new Date(); realToday.setHours(0,0,0,0);
                 const startDate = parseDateLocal(currentSemesterData.settings.startDate);
                 let snapshotDate = new Date(realToday);
-                
                 const diffTime = realToday - startDate;
                 if (diffTime > 0) { 
                     const diffDays = Math.floor(diffTime / (1000 * 60 * 60 * 24)); 
@@ -583,9 +481,7 @@
                 let maxPeriods = 0; const classPeriods = {}; const result = {}; let globalDaysToExam = 999; 
 
                 currentCourse.classes.forEach(cls => {
-                    let remainingPeriods = 0; 
-                    let totalPeriods = 0;      
-                    let taughtPeriods = 0;    
+                    let remainingPeriods = 0; let totalPeriods = 0; let taughtPeriods = 0;    
                     let track = (currentCourse.system === '技高三' ? 'v3' : (currentCourse.system === '綜高三' ? 's3' : 'common'));
                     const trackData = currentSemesterData.settings[track] || {};
                     
@@ -604,12 +500,7 @@
                     let lastExamDateStr = null;
                     
                     for (const d of allExamDates) { 
-                        // 🌟 [核心修改目標 1]：修正時間雷達基準，改用真實的今天 (realTodayStr) 判斷，確保段考一結束後立即切換至二段區間
-                        if (d >= realTodayStr) { 
-                            if (!nextExamDateStr) nextExamDateStr = d; 
-                        } else {
-                            lastExamDateStr = d;
-                        }
+                        if (d >= realTodayStr) { if (!nextExamDateStr) nextExamDateStr = d; } else { lastExamDateStr = d; }
                     }
 
                     if (nextExamDateStr) {
@@ -619,52 +510,30 @@
                             tempD.setDate(tempD.getDate() + 1); 
                             periodStartStr = formatDateKey(tempD);
                         }
-                        if (periodStartStr < currentSemesterData.settings.startDate) {
-                            periodStartStr = currentSemesterData.settings.startDate;
-                        }
+                        if (periodStartStr < currentSemesterData.settings.startDate) { periodStartStr = currentSemesterData.settings.startDate; }
 
                         const pStart = parseDateLocal(periodStartStr);
                         const pEnd = parseDateLocal(nextExamDateStr);
                         
                         for (let d = new Date(pStart); d < pEnd; d.setDate(d.getDate() + 1)) {
-                            const dStr = formatDateKey(d); 
-                            const dayOfWeek = d.getDay();
-                            
-                            // 🌟 [核心修改目標 2]：移除硬編碼的週末排除限制，完全信任課表設定，以完美支援週末補課
+                            const dStr = formatDateKey(d); const dayOfWeek = d.getDay();
                             if (getHoliday(dStr) || getExamName(dStr, currentCourse.system, currentSemesterData.settings)) continue;
-                            
                             const scheds = cls.schedule?.filter(s => s.day === dayOfWeek) || [];
                             totalPeriods += scheds.length;
-
-                            scheds.forEach(s => {
-                                const existingLog = cls.logs?.find(l => l.date === dStr && l.period === s.period);
-                                if (existingLog) taughtPeriods++;
-                            });
+                            scheds.forEach(s => { const existingLog = cls.logs?.find(l => l.date === dStr && l.period === s.period); if (existingLog) taughtPeriods++; });
                         }
 
                         const endDate = parseDateLocal(nextExamDateStr);
                         globalDaysToExam = Math.ceil((endDate - realToday) / (1000 * 60 * 60 * 24));
                         for (let d = new Date(snapshotDate); d < endDate; d.setDate(d.getDate() + 1)) {
                             const dStr = formatDateKey(d); const dayOfWeek = d.getDay();
-                            
-                            // 🌟 [核心修改目標 2 配合]：同樣移除快照迴圈中的週末排除
                             if (getHoliday(dStr) || getExamName(dStr, currentCourse.system, currentSemesterData.settings)) continue;
-                            
                             const scheds = cls.schedule?.filter(s => s.day === dayOfWeek) || [];
-                            scheds.forEach(s => { 
-                                const existingLog = cls.logs?.find(l => l.date === dStr && l.period === s.period); 
-                                // 🌟 [核心修改目標 3]：修正剩餘未教節數判定。只要有填日誌(包含小考實驗)，該節課就算消耗，不應加回未教節數
-                                if (!existingLog) remainingPeriods++; 
-                            });
+                            scheds.forEach(s => { const existingLog = cls.logs?.find(l => l.date === dStr && l.period === s.period); if (!existingLog) remainingPeriods++; });
                         }
                     }
                     
-                    classPeriods[cls.id] = { 
-                        snapshotRemaining: remainingPeriods, 
-                        realRemaining: totalPeriods - taughtPeriods,
-                        total: totalPeriods,
-                        examLabel: examLabel 
-                    }; 
+                    classPeriods[cls.id] = { snapshotRemaining: remainingPeriods, realRemaining: totalPeriods - taughtPeriods, total: totalPeriods, examLabel: examLabel }; 
                     if (remainingPeriods > maxPeriods) maxPeriods = remainingPeriods;
                 });
 
@@ -684,7 +553,6 @@
                     else if (delta === 1) { msg = `微幅落後 1 節`; textClass = 'text-teal-600'; colorClass = 'bg-teal-400'; barBgClass = 'bg-teal-50 text-teal-600 border border-teal-200'; }
                     
                     const percentage = maxPeriods > 0 ? (snapshotPeriods / maxPeriods) * 100 : 0;
-                    
                     result[cls.id] = { periods: realPeriods, totalPeriods, delta, status, colorClass, textClass, barBgClass, msg, percentage, daysToExam: globalDaysToExam, snapshotDisplay, examLabel };
                 });
                 return result;
@@ -710,9 +578,7 @@
 
                         scheds.forEach(p => {
                             const currentBlock = getBlock(p, scheds);
-
                             const exactLog = cls.logs?.find(l => l.date === dateKey && l.period === p);
-
                             const pastLogs = cls.logs?.filter(l => { 
                                 if (l.date < dateKey) return true; 
                                 if (l.date === dateKey && l.period < p) return true; 
@@ -723,35 +589,24 @@
                             }) || [];
                             const lastPastLog = pastLogs.length > 0 ? pastLogs[pastLogs.length - 1] : null;
 
-                            let logPrefix = '上次: '; 
-                            let logText = '無紀錄'; 
-                            let isSpecialEvent = false; 
-                            let hasLog = !!exactLog; 
+                            let logPrefix = '上次: '; let logText = '無紀錄'; let isSpecialEvent = false; let hasLog = !!exactLog; 
 
                             if (exactLog) {
                                 logPrefix = '今日: ';
                                 if (exactLog.event) { 
-                                    isSpecialEvent = true; 
-                                    const evtMap = { quiz: '小考', lab: '實驗', study: '自修', other: '活動' }; 
+                                    isSpecialEvent = true; const evtMap = { quiz: '小考', lab: '實驗', study: '自修', other: '活動' }; 
                                     logText = `${evtMap[exactLog.event]}${exactLog.eventText ? `:${exactLog.eventText}` : ''}`; 
-                                } else { 
-                                    logText = `${exactLog.chapter.split(' ')[0]}(P${exactLog.page})`; 
-                                }
+                                } else { logText = `${exactLog.chapter.split(' ')[0]}(P${exactLog.page})`; }
                             } else if (lastPastLog) {
                                 if (lastPastLog.event) {
                                     const evtMap = { quiz: '小考', lab: '實驗', study: '自修', other: '活動' }; 
                                     logText = `${evtMap[lastPastLog.event]}${lastPastLog.eventText ? `:${lastPastLog.eventText}` : ''}`;
-                                } else {
-                                    logText = `${lastPastLog.chapter.split(' ')[0]}(P${lastPastLog.page})`;
-                                }
+                                } else { logText = `${lastPastLog.chapter.split(' ')[0]}(P${lastPastLog.page})`; }
                             }
 
                             result.push({
                                 ...cls, period: p, courseId: course.id, courseTheme: THEME_COLORS.find(t => t.id === course.themeId),
-                                hasLog: hasLog, isSpecialEvent, logPrefix, logText,
-                                isHoliday: !!holidayObj, holidayDesc: holidayObj?.desc,
-                                isExam: !!examName, examName: examName,
-                                currentBlock: currentBlock 
+                                hasLog: hasLog, isSpecialEvent, logPrefix, logText, isHoliday: !!holidayObj, holidayDesc: holidayObj?.desc, isExam: !!examName, examName: examName, currentBlock: currentBlock 
                             });
                         });
                     });
@@ -764,8 +619,7 @@
                 if (type === 'classJournal') { 
                     const dateStr = formatDateKey(extra.date);
                     const block = extra.cls.currentBlock || [extra.period];
-                    setEditingCell({ classId: extra.cls.id, date: dateStr, period: extra.period, block: block }); 
-                    setEditingClassId(extra.cls.id); 
+                    setEditingCell({ classId: extra.cls.id, date: dateStr, period: extra.period, block: block }); setEditingClassId(extra.cls.id); 
                     
                     const targetCourse = currentCourses.find(c => c.id === extra.courseId);
                     if (targetCourse) setSelectedCourseId(targetCourse.id);
@@ -793,25 +647,14 @@
                         if (blockLogs.length === block.length) {
                             const firstBlockLog = blockLogs[0];
                             const allIdentical = blockLogs.every(l => 
-                                l.chapter === firstBlockLog.chapter && 
-                                l.page === firstBlockLog.page && 
-                                l.event === firstBlockLog.event && 
-                                l.eventText === firstBlockLog.eventText
+                                l.chapter === firstBlockLog.chapter && l.page === firstBlockLog.page && l.event === firstBlockLog.event && l.eventText === firstBlockLog.eventText
                             );
                             autoConsecutive = allIdentical; 
-                        } else {
-                            autoConsecutive = false;
-                        }
+                        } else { autoConsecutive = false; }
                     }
 
                     setFormData({ 
-                        ...formData, 
-                        logChapter: existingLog ? existingLog.chapter : defaultChapter, 
-                        logPage: existingLog ? existingLog.page : defaultPage, 
-                        logFinishedChapters: extra.cls.finishedChapters || [], 
-                        logEvent: existingLog?.event || null, 
-                        logEventText: existingLog?.eventText || '', 
-                        isConsecutiveLog: autoConsecutive 
+                        ...formData, logChapter: existingLog ? existingLog.chapter : defaultChapter, logPage: existingLog ? existingLog.page : defaultPage, logFinishedChapters: extra.cls.finishedChapters || [], logEvent: existingLog?.event || null, logEventText: existingLog?.eventText || '', isConsecutiveLog: autoConsecutive 
                     }); 
                 }
                 else if (type === 'editHoliday') { const existing = getHoliday(extra); setFormData({ ...formData, holidayDate: extra, holidayDesc: existing ? existing.desc : '' }); }
@@ -824,16 +667,18 @@
                 else if (type === 'semesterSettings') { setFormData({ ...formData, examData: JSON.parse(JSON.stringify(currentSemesterData.settings)) }); setActiveSettingTab('common'); setActiveExamKey(null); setViewDate(new Date(currentDate)); }
                 else if (type === 'editSyllabus') { 
                     const currentSyllabus = JSON.parse(JSON.stringify(currentCourses.find(c => c.id === extra).syllabus || DEFAULT_SYLLABUS));
-                    ['exam1', 'exam2', 'exam3'].forEach(k => {
-                        currentSyllabus[k].forEach(ch => ch.originalTitle = ch.title);
-                    });
-                    setFormData({ ...formData, syllabusData: currentSyllabus }); 
-                    setSelectedCourseId(extra); 
-                    setExpandedSyllabusTab('exam1'); 
+                    ['exam1', 'exam2', 'exam3'].forEach(k => { currentSyllabus[k].forEach(ch => ch.originalTitle = ch.title); });
+                    setFormData({ ...formData, syllabusData: currentSyllabus }); setSelectedCourseId(extra); setExpandedSyllabusTab('exam1'); 
                 }
                 else if (type === 'devicePairing') { setInputSyncKey(''); setIsCopied(false); }
                 else if (type === 'confirmDelete') { setDeleteTarget(extra); }
                 else if (type === 'deleteAccount') { setDeleteAccountInput(''); setDeleteAccountError(''); }
+                // 🌟 當老師開啟時光機面板時，從深層保險箱抓出最後殘影時間
+                else if (type === 'backupRestore') {
+                    const localB = localStorage.getItem('physics_auto_backup');
+                    if (localB) { try { setLocalBackupTime(JSON.parse(localB).time); } catch(e){} } 
+                    else { setLocalBackupTime(null); }
+                }
                 setIsModalOpen(true);
             };
 
@@ -841,7 +686,6 @@
                 const newData = { ...data }; const semester = newData[selectedYear][selectedSemester];
                 if (deleteTarget.type === 'course') { semester.courses = semester.courses.filter(c => c.id !== deleteTarget.id); if (selectedCourseId === deleteTarget.id) setSelectedCourseId(semester.courses.length > 0 ? semester.courses[0].id : null); }
                 else if (deleteTarget.type === 'class') { const course = semester.courses.find(c => c.id === deleteTarget.courseId); if (course) course.classes = course.classes.filter(cl => cl.id !== deleteTarget.id); }
-                // 🌟 所有手動更新替換為 updateLocalData
                 updateLocalData(newData); setIsModalOpen(false); setDeleteTarget(null);
             };
 
@@ -858,16 +702,13 @@
                         newData[formData.year][formData.semester] = { settings: { startDate: '', common: {exam1:[], exam2:[], exam3:[]}, v3: {exam1:[], exam2:[], exam3:[]}, s3: {exam1:[], exam2:[], exam3:[]}, holidays: [] }, courses: inheritedCourses }; 
                     }
                     setSelectedYear(formData.year); setSelectedSemester(formData.semester); setSelectedCourseId(null); 
-                    // 🌟 替換為 updateLocalData
                     updateLocalData(newData); setIsModalOpen(false); return; 
                 }
                 const semester = newData[selectedYear][selectedSemester];
                 if (modalType === 'classJournal') { 
                     const cls = semester.courses.find(c => c.classes.some(cl => cl.id === editingCell.classId)).classes.find(cl => cl.id === editingCell.classId); 
                     cls.finishedChapters = formData.logFinishedChapters; 
-                    
                     const periodsToUpdate = (formData.isConsecutiveLog && editingCell.block?.length > 1) ? editingCell.block : [editingCell.period];
-                    
                     periodsToUpdate.forEach(p => {
                         const logEntry = { date: editingCell.date, period: p, chapter: formData.logChapter, page: formData.logPage, event: formData.logEvent, eventText: formData.logEventText }; 
                         const existingIdx = cls.logs.findIndex(l => l.date === editingCell.date && l.period === p); 
@@ -884,47 +725,29 @@
                 else if (modalType === 'editClass') {
                     if (!formData.className) return;
                     const targetCourse = semester.courses.find(c => c.id === formData.courseId);
-                    if (targetCourse) {
-                        const targetClass = targetCourse.classes.find(cl => cl.id === formData.classId);
-                        if (targetClass) targetClass.name = formData.className;
-                    }
+                    if (targetCourse) { const targetClass = targetCourse.classes.find(cl => cl.id === formData.classId); if (targetClass) targetClass.name = formData.className; }
                 }
                 else if (modalType === 'editHoliday') { 
                     const f = (semester.settings.holidays || []).filter(h => (typeof h === 'string' ? h : h.date) !== formData.holidayDate); 
-                    if (formData.holidayDesc.trim()) f.push({ date: formData.holidayDate, desc: formData.holidayDesc }); 
-                    else f.push({ date: formData.holidayDate, desc: '國定假日' });
+                    if (formData.holidayDesc.trim()) f.push({ date: formData.holidayDate, desc: formData.holidayDesc }); else f.push({ date: formData.holidayDate, desc: '國定假日' });
                     semester.settings.holidays = f; 
                 }
                 else if (modalType === 'semesterSettings') { semester.settings = { ...semester.settings, ...formData.examData }; }
                 else if (modalType === 'editSyllabus') { 
                     const targetCourse = semester.courses.find(c => c.id === selectedCourseId);
                     const nameChanges = {};
-
-                    ['exam1', 'exam2', 'exam3'].forEach(k => {
-                        formData.syllabusData[k].forEach(ch => {
-                            if (ch.originalTitle && ch.originalTitle !== ch.title) {
-                                nameChanges[ch.originalTitle] = ch.title;
-                            }
-                            delete ch.originalTitle; 
-                        });
-                    });
-
+                    ['exam1', 'exam2', 'exam3'].forEach(k => { formData.syllabusData[k].forEach(ch => { if (ch.originalTitle && ch.originalTitle !== ch.title) { nameChanges[ch.originalTitle] = ch.title; } delete ch.originalTitle; }); });
                     targetCourse.syllabus = JSON.parse(JSON.stringify(formData.syllabusData)); 
-
                     if (Object.keys(nameChanges).length > 0) {
                         targetCourse.classes.forEach(cls => {
-                            cls.logs.forEach(log => {
-                                if (nameChanges[log.chapter]) log.chapter = nameChanges[log.chapter];
-                            });
+                            cls.logs.forEach(log => { if (nameChanges[log.chapter]) log.chapter = nameChanges[log.chapter]; });
                             cls.finishedChapters = cls.finishedChapters.map(ch => nameChanges[ch] || ch);
                         });
                     }
                 }
-                // 🌟 替換為 updateLocalData
                 updateLocalData(newData); setIsModalOpen(false);
             };
 
-            // 🌟 替換為 updateLocalData
             const toggleSchedule = (dayIndex, period) => { const newData = { ...data }; const cls = newData[selectedYear][selectedSemester].courses.find(c => c.id === selectedCourseId)?.classes.find(c => c.id === editingClassId); if (cls) { const exists = cls.schedule.find(s => s.day === dayIndex && s.period === period); if (exists) cls.schedule = cls.schedule.filter(s => !(s.day === dayIndex && s.period === period)); else cls.schedule.push({ day: dayIndex, period }); updateLocalData(newData); } };
             
             const getConflictingClassName = (day, period) => { for (const course of currentCourses) { for (const cls of course.classes) { if (cls.id === editingClassId) continue; if (cls.schedule?.some(s => s.day === day && s.period === period)) return cls.name; } } return null; };
@@ -944,8 +767,8 @@
                 else if (e2 && editingCell.date <= e2) currentExamByDate = 'exam2';
                 let currentExamByChapter = 'exam1';
                 if (currentCourse.syllabus) {
-                if ((currentCourse.syllabus.exam2 || []).some(ch => ch.title === formData.logChapter)) currentExamByChapter = 'exam2';
-                else if ((currentCourse.syllabus.exam3 || []).some(ch => ch.title === formData.logChapter)) currentExamByChapter = 'exam3';
+                    if ((currentCourse.syllabus.exam2 || []).some(ch => ch.title === formData.logChapter)) currentExamByChapter = 'exam2';
+                    else if ((currentCourse.syllabus.exam3 || []).some(ch => ch.title === formData.logChapter)) currentExamByChapter = 'exam3';
                 }
                 activeLogGroups = [...new Set([currentExamByDate, currentExamByChapter])].sort();
             }
@@ -968,7 +791,6 @@
             const weekDays = useMemo(() => { const d = new Date(currentDate); const day = d.getDay(); d.setDate(d.getDate() - day + (day === 0 ? -6 : 1)); return Array.from({ length: 7 }, (_, i) => { const n = new Date(d); n.setDate(n.getDate() + i); return n; }); }, [currentDate]);
 
             const handleExport = () => { try { const blob = new Blob([JSON.stringify(data, null, 2)], { type: "application/json" }); const url = URL.createObjectURL(blob); const link = document.createElement('a'); link.href = url; link.download = `physics_backup_${new Date().toISOString().slice(0, 10).replace(/-/g, "")}.json`; link.click(); } catch (e) { console.error(e); } };
-            // 🌟 替換為 updateLocalData
             const handleImport = (e) => { const file = e.target.files[0]; if (!file) return; const reader = new FileReader(); reader.onload = (event) => { try { const importedData = JSON.parse(event.target.result); if (importedData) { updateLocalData(importedData); setIsModalOpen(false); } } catch (err) { alert("檔案解析失敗"); } }; reader.readAsText(file); e.target.value = ''; };
 
             if (!isFirebaseReady || isCheckingAuth) {
@@ -984,8 +806,6 @@
                 return (
                     <div className="h-screen flex flex-col items-center justify-center bg-slate-50 p-4">
                         <div className="bg-white rounded-[40px] shadow-2xl p-8 md:p-10 w-full max-w-md animate-in flex flex-col items-center text-center border border-slate-100">
-                            
-                            {/* 🌟 核心升級 4：確認註冊防線 UI 面板 */}
                             {pendingNewAccount ? (
                                 <div className="w-full flex flex-col items-center animate-in">
                                     <div className="w-20 h-20 bg-emerald-50 rounded-full flex items-center justify-center text-emerald-500 mb-6 shadow-inner ring-4 ring-emerald-100">
@@ -1022,20 +842,18 @@
                                     </div>
 
                                     <div className="w-full space-y-4">
-                                {loginTab === 'account' ? (
-                                    <div className="text-left animate-in">
-                                        <label className="block text-[11px] font-black text-slate-400 uppercase tracking-widest mb-2 ml-1">建立 / 登入您的專屬帳號</label>
-                                        <input type="number" value={loginAccountId} onChange={(e) => setLoginAccountId(e.target.value)} placeholder="手機末 6 碼 + 生日 4 碼 (共 10 碼)" className="w-full p-4 bg-slate-50 border-2 border-slate-200 rounded-2xl font-bold outline-none focus:border-indigo-400 transition-colors text-center tracking-widest" />
-                                        
-                                        {/* 🌟 核心修復：加入清晰的具體數字範例 */}
-                                        <p className="text-[10px] text-slate-400 mt-2 font-bold px-1 leading-relaxed">
-                                            💡 範例：手機號碼 0912-345-678，生日 5月12日，請輸入 <span className="text-indigo-500 font-black">3456780512</span>。<br/>
-                                            (若輸入未註冊的帳號，將自動引導您建立)
-                                        </p>
-                                    </div>
-                                ) : (
-                                    <div className="text-left animate-in">
-                                        <label className="block text-[11px] font-black text-slate-400 uppercase tracking-widest mb-2 ml-1">輸入您原本的金鑰</label>
+                                        {loginTab === 'account' ? (
+                                            <div className="text-left animate-in">
+                                                <label className="block text-[11px] font-black text-slate-400 uppercase tracking-widest mb-2 ml-1">建立 / 登入您的專屬帳號</label>
+                                                <input type="number" value={loginAccountId} onChange={(e) => setLoginAccountId(e.target.value)} placeholder="手機末 6 碼 + 生日 4 碼 (共 10 碼)" className="w-full p-4 bg-slate-50 border-2 border-slate-200 rounded-2xl font-bold outline-none focus:border-indigo-400 transition-colors text-center tracking-widest" />
+                                                <p className="text-[10px] text-slate-400 mt-2 font-bold px-1 leading-relaxed">
+                                                    💡 範例：手機號碼 0912-345-678，生日 5月12日，請輸入 <span className="text-indigo-500 font-black">3456780512</span>。<br/>
+                                                    (若輸入未註冊的帳號，將自動引導您建立)
+                                                </p>
+                                            </div>
+                                        ) : (
+                                            <div className="text-left animate-in">
+                                                <label className="block text-[11px] font-black text-slate-400 uppercase tracking-widest mb-2 ml-1">輸入您原本的金鑰</label>
                                                 <input type="text" value={loginKey} onChange={(e) => setLoginKey(e.target.value.toUpperCase())} placeholder="PHY-XXXXXXXX" className="w-full p-4 bg-slate-50 border-2 border-slate-200 rounded-2xl font-black outline-none focus:border-indigo-400 transition-colors text-center tracking-widest uppercase" />
                                             </div>
                                         )}
@@ -1103,8 +921,6 @@
                         </div>
                         <div className="p-4 border-t border-slate-100 space-y-2">
                             <button onClick={() => openModal('semesterSettings')} className="w-full py-3 bg-slate-50 text-slate-500 rounded-xl text-xs font-bold border border-dashed border-slate-300 hover:bg-slate-100 flex justify-center gap-2"><i className="ph-bold ph-stack text-sm"></i> 設定開學/段考日</button>
-                            
-                            {/* 🌟 核心升級 1：將原本散落的三個按鈕，收納成單一的「系統設定」按鈕 */}
                             <button onClick={() => openModal('systemSettings')} className="w-full py-3 bg-slate-50 text-slate-600 rounded-xl text-xs font-bold border border-slate-200 hover:bg-slate-100 flex justify-center gap-2 mt-4">
                                 <i className="ph-bold ph-gear text-sm"></i> 系統設定
                             </button>
@@ -1114,7 +930,6 @@
                     <div className="flex-1 flex flex-col h-screen overflow-hidden">
                         
                         <div className="w-full bg-white border-b px-3 md:px-8 z-20 min-h-[5rem] py-2 md:py-0 md:h-20 flex flex-col md:flex-row items-center justify-between shrink-0 gap-2 md:gap-0">
-                            
                             <div className="flex items-center justify-between w-full md:w-auto">
                                 <div className="flex items-center gap-2 lg:gap-4">
                                     <button onClick={() => setIsSidebarOpen(true)} className="lg:hidden p-2 -ml-2 text-slate-600"><i className="ph-bold ph-list text-2xl"></i></button>
@@ -1167,18 +982,12 @@
                             </div>
                         </div>
 
-                        <div 
-                            className="flex-1 overflow-auto p-2 md:p-4 lg:p-8 bg-slate-50/50"
-                            onTouchStart={onTouchStart}
-                            onTouchMove={onTouchMove}
-                            onTouchEnd={onTouchEnd}
-                        >
+                        <div className="flex-1 overflow-auto p-2 md:p-4 lg:p-8 bg-slate-50/50" onTouchStart={onTouchStart} onTouchMove={onTouchMove} onTouchEnd={onTouchEnd}>
                             <div className="max-w-[1200px] mx-auto h-full">
                                 {activeMainView === 'dashboard' ? (
                                     currentCourse ? (
                                         <div className="space-y-6 md:space-y-8 animate-in">
                                             <div className="flex items-center gap-5 bg-white p-6 lg:p-8 rounded-[40px] shadow-sm border border-slate-100 relative overflow-hidden">
-                                                
                                                 <div className="hidden md:flex absolute left-4 z-20">
                                                     <button onClick={goToPrevCourse} disabled={!hasPrevCourse} className="p-3 rounded-full bg-slate-50 text-slate-400 hover:text-indigo-600 hover:bg-indigo-50 disabled:opacity-30 disabled:hover:bg-slate-50 disabled:hover:text-slate-400 transition-all"><i className="ph-bold ph-caret-left text-xl"></i></button>
                                                 </div>
@@ -1200,9 +1009,6 @@
                                                 <div className={`absolute top-0 right-0 w-32 h-32 opacity-5 rounded-full -mr-10 -mt-10 ${currentTheme.base}`}></div>
                                             </div>
                                             
-                                            {/* ========================================== */}
-                                            {/* 🏎️ 模組四：視覺化賽道系統 (動態天花板與圖層魔法) */}
-                                            {/* ========================================== */}
                                             {raceTrackData && raceTrackData.chapters.length > 0 && (
                                                 <div className="bg-white p-6 lg:p-8 rounded-[40px] shadow-sm border border-slate-100 animate-in relative overflow-hidden mt-2">
                                                     <div className="flex justify-between items-center mb-10">
@@ -1213,57 +1019,28 @@
                                                         <span className={`text-xs font-bold px-3 py-1 rounded-full ${currentTheme.light} ${currentTheme.text}`}>即時推進座標</span>
                                                     </div>
                                                     
-                                                    {/* 動態天花板：樓蓋越高，天空越高 */}
                                                     <div className="relative w-full" style={{ height: `${60 + raceTrackData.maxLayer * 45}px` }}>
-                                                        
-                                                        {/* 賽道底圖 (HSL 漸層演算法) */}
                                                         <div className="absolute bottom-0 left-0 w-full h-8 flex rounded-full overflow-hidden shadow-inner bg-slate-100">
                                                             {raceTrackData.chapters.map((ch, idx) => (
-                                                                <div key={idx} 
-                                                                     className="h-full flex items-center justify-center px-2 border-r border-white/30 last:border-0 relative group"
-                                                                     style={{ 
-                                                                         width: `${100 / raceTrackData.chapters.length}%`,
-                                                                         backgroundColor: `hsl(${currentTheme.h}, ${currentTheme.s}%, ${90 - (idx * 12)}%)`
-                                                                     }}>
+                                                                <div key={idx} className="h-full flex items-center justify-center px-2 border-r border-white/30 last:border-0 relative group" style={{ width: `${100 / raceTrackData.chapters.length}%`, backgroundColor: `hsl(${currentTheme.h}, ${currentTheme.s}%, ${90 - (idx * 12)}%)` }}>
                                                                      <span className="text-[10px] font-black text-white truncate drop-shadow-md z-10 hidden md:block">{ch.title}</span>
-                                                                     {/* 行動版懸停提示 */}
                                                                      <div className="absolute bottom-full mb-1 opacity-0 group-hover:opacity-100 bg-slate-800 text-white text-[10px] py-1 px-2 rounded md:hidden z-50 whitespace-nowrap">{ch.title}</div>
                                                                 </div>
                                                             ))}
                                                         </div>
 
-                                                        {/* 班級旗幟 (含圖層反轉魔法) */}
                                                         {raceTrackData.positions.map(cls => (
-                                                            <div key={cls.id} 
-                                                                 className="absolute flex flex-col items-center transition-all duration-1000 ease-out"
-                                                                 style={{ 
-                                                                     left: `${Math.min(cls.x, 98)}%`, // X軸定位
-                                                                     bottom: '16px', // 從賽道中央起算
-                                                                     paddingBottom: `${cls.yLevel * 45}px`, // 依樓層撐高
-                                                                     zIndex: 20 - cls.yLevel, // 🌟 [核心修改目標] 降低基礎圖層數值，避免蓋過側邊欄 (原為 50，改為 20)
-                                                                     transform: 'translateX(-50%)'
-                                                                 }}>
-                                                                
-                                                                {/* 旗桿 */}
-                                                                <div className="absolute bottom-0 w-1 rounded-full opacity-30" 
-                                                                     style={{ height: `calc(100% - 10px)`, left: '50%', transform: 'translateX(-50%)', backgroundColor: `hsl(${currentTheme.h}, ${currentTheme.s}%, 50%)`, zIndex: -1 }}></div>
-                                                                
-                                                                {/* 旗面/名牌 */}
-                                                                <div className={`relative bg-white border-2 px-3 py-1.5 rounded-xl shadow-md whitespace-nowrap flex flex-col items-center cursor-default hover:scale-110 transition-transform group`}
-                                                                     style={{ borderColor: `hsl(${currentTheme.h}, ${currentTheme.s}%, 70%)` }}>
+                                                            <div key={cls.id} className="absolute flex flex-col items-center transition-all duration-1000 ease-out" style={{ left: `${Math.min(cls.x, 98)}%`, bottom: '16px', paddingBottom: `${cls.yLevel * 45}px`, zIndex: 20 - cls.yLevel, transform: 'translateX(-50%)' }}>
+                                                                <div className="absolute bottom-0 w-1 rounded-full opacity-30" style={{ height: `calc(100% - 10px)`, left: '50%', transform: 'translateX(-50%)', backgroundColor: `hsl(${currentTheme.h}, ${currentTheme.s}%, 50%)`, zIndex: -1 }}></div>
+                                                                <div className={`relative bg-white border-2 px-3 py-1.5 rounded-xl shadow-md whitespace-nowrap flex flex-col items-center cursor-default hover:scale-110 transition-transform group`} style={{ borderColor: `hsl(${currentTheme.h}, ${currentTheme.s}%, 70%)` }}>
                                                                     <span className="text-xs font-black" style={{ color: `hsl(${currentTheme.h}, ${currentTheme.s}%, 40%)` }}>{cls.name}</span>
-                                                                    
-                                                                    {/* 懸浮進度提示 */}
                                                                     <div className="absolute bottom-full mb-2 opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none z-50 bg-slate-800 text-white text-[10px] font-bold py-1.5 px-3 rounded-xl whitespace-nowrap shadow-xl flex items-center gap-1.5">
                                                                         <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse"></span>
                                                                         {cls.chapter} {cls.page ? `(P${cls.page})` : ''}
                                                                         <div className="absolute top-full left-1/2 -translate-x-1/2 border-4 border-transparent border-t-slate-800"></div>
                                                                     </div>
                                                                 </div>
-                                                                
-                                                                {/* 賽車輪胎 (定位點) */}
-                                                                <div className="absolute bottom-[-10px] w-3.5 h-3.5 bg-white border-4 rounded-full shadow-sm"
-                                                                     style={{ borderColor: `hsl(${currentTheme.h}, ${currentTheme.s}%, 50%)` }}></div>
+                                                                <div className="absolute bottom-[-10px] w-3.5 h-3.5 bg-white border-4 rounded-full shadow-sm" style={{ borderColor: `hsl(${currentTheme.h}, ${currentTheme.s}%, 50%)` }}></div>
                                                             </div>
                                                         ))}
                                                     </div>
@@ -1365,13 +1142,10 @@
                                                             
                                                             {PERIODS.map(p => {
                                                                 const classes = getDayClasses(currentDate).filter(c => c.period === p);
-                                                                
                                                                 return (
                                                                     <div key={p} className="relative flex items-center justify-between md:justify-around group">
                                                                         <div className="flex items-center w-12 md:w-24 shrink-0 z-10">
-                                                                            <div className="h-8 w-8 md:w-12 md:h-12 bg-white border-2 border-slate-200 rounded-full flex items-center justify-center font-black text-slate-400 text-sm md:text-base group-hover:border-indigo-400 group-hover:text-indigo-600 transition-colors shadow-sm">
-                                                                                {p}
-                                                                            </div>
+                                                                            <div className="h-8 w-8 md:w-12 md:h-12 bg-white border-2 border-slate-200 rounded-full flex items-center justify-center font-black text-slate-400 text-sm md:text-base group-hover:border-indigo-400 group-hover:text-indigo-600 transition-colors shadow-sm">{p}</div>
                                                                         </div>
                                                                         
                                                                         <div className="w-[calc(100%-3rem)] md:w-96 p-2 z-10">
@@ -1411,21 +1185,13 @@
 
                                         {calendarViewMode === 'week' && (
                                             <div className="flex-1 overflow-auto w-full relative bg-slate-50/20">
-                                                {/* 🌟 核心修復 1：移除 h-full，讓標題與內容共享同一個高度軸與捲動條，徹底解決格線偏移 */}
                                                 <div className="min-w-[900px] flex flex-col">
-                                                    
-                                                    {/* 🌟 核心修復 2：讓整個標題列擁有 sticky top-0，向下滑動時吸頂 */}
                                                     <div className="sticky top-0 z-30 grid border-b border-slate-200 bg-slate-50 shadow-sm" style={{ gridTemplateColumns: '60px 2fr 2fr 2fr 2fr 2fr 1fr 1fr' }}>
-                                                        
-                                                        {/* 🌟 核心修復 3：左上角時鐘圖示，必須同時具備最高圖層 z-40，並向左吸附 */}
                                                         <div className="sticky left-0 z-40 p-4 flex items-center justify-center border-r border-slate-200 bg-slate-100"><i className="ph-bold ph-clock text-slate-400"></i></div>
-                                                        
                                                         {weekDays.map((d, i) => {
                                                             const dayIdx = d.getDay();
                                                             const dayColor = dayIdx === 0 ? 'text-red-500' : dayIdx === 6 ? 'text-blue-500' : 'text-slate-400';
                                                             const numColor = isToday(d) ? 'text-indigo-600' : dayIdx === 0 ? 'text-red-500' : dayIdx === 6 ? 'text-blue-500' : '';
-                                                            
-                                                            {/* 🌟 核心修復 4：吸頂元件必須使用實心背景色，避免捲動時底下文字透出來 */}
                                                             const bgClass = isToday(d) ? 'bg-indigo-50' : dayIdx === 0 ? 'bg-red-50' : dayIdx === 6 ? 'bg-blue-50' : 'bg-slate-50';
                                                             return (
                                                                 <div key={i} className={`p-4 text-center border-r border-slate-200 transition-colors ${bgClass}`}>
@@ -1436,14 +1202,10 @@
                                                         })}
                                                     </div>
                                                     
-                                                    {/* 🌟 移除獨立的 overflow-y-auto，統一由最外層控制 */}
                                                     <div className="pb-4">
                                                         {PERIODS.map(p => (
                                                             <div key={p} className="grid border-b border-slate-100" style={{ gridTemplateColumns: '60px 2fr 2fr 2fr 2fr 2fr 1fr 1fr' }}>
-                                                                
-                                                                {/* 🌟 核心修復 5：左側節次列加入 sticky left-0 與實心背景，向右滑動時完美凍結 */}
                                                                 <div className="sticky left-0 z-20 border-r border-slate-200 flex items-center justify-center text-[11px] font-black text-slate-500 bg-slate-50">第{p}節</div>
-                                                                
                                                                 {weekDays.map((d, i) => {
                                                                     const classes = getDayClasses(d).filter(c => c.period === p);
                                                                     const dayIdx = d.getDay();
@@ -1490,21 +1252,14 @@
                                                         for(let i=0;i<offset;i++) grid.push(<div key={`e-${i}`} className="aspect-square opacity-0"/>);
                                                         for(let d=1;d<=dim;d++) {
                                                             const dateObj=new Date(y,m,d); const dk=formatDateKey(dateObj); const ho=getHoliday(dk); const isH=!!ho; const classes=getDayClasses(dateObj); const exams=getGlobalExams(dk, currentSemesterData.settings);
-                                                            
                                                             const dayIdx = dateObj.getDay();
                                                             const numColor = isH ? 'text-rose-500' : dayIdx === 0 ? 'text-red-500' : dayIdx === 6 ? 'text-blue-500' : 'text-slate-600';
                                                             const cellBgClass = isH ? 'bg-rose-50 border-rose-200' : dayIdx === 0 ? 'bg-red-50/50 border-red-100 hover:bg-red-50' : dayIdx === 6 ? 'bg-blue-50/50 border-blue-100 hover:bg-blue-50' : 'bg-white hover:bg-slate-50 border-slate-100';
 
                                                             grid.push(
-                                                                <div key={d} 
-                                                                    onClick={()=>{if(isH) openModal('editHoliday',dk); else {setCurrentDate(dateObj);setCalendarViewMode('day');}}} 
-                                                                    onContextMenu={(e) => { e.preventDefault(); if(!isH) openModal('editHoliday', dk); }}
-                                                                    className={`aspect-square rounded-[24px] border p-1 md:p-2 flex flex-col items-center cursor-pointer group relative native-touch ${isToday(dateObj)?'ring-2 ring-indigo-500 shadow-sm':''} ${cellBgClass}`}>
-                                                                    
+                                                                <div key={d} onClick={()=>{if(isH) openModal('editHoliday',dk); else {setCurrentDate(dateObj);setCalendarViewMode('day');}}} onContextMenu={(e) => { e.preventDefault(); if(!isH) openModal('editHoliday', dk); }} className={`aspect-square rounded-[24px] border p-1 md:p-2 flex flex-col items-center cursor-pointer group relative native-touch ${isToday(dateObj)?'ring-2 ring-indigo-500 shadow-sm':''} ${cellBgClass}`}>
                                                                     {!isH && <button onClick={(e)=>{e.stopPropagation();openModal('editHoliday',dk);}} className="absolute top-2 right-2 w-7 h-7 hidden md:flex items-center justify-center opacity-0 group-hover:opacity-100 text-slate-400 hover:text-rose-500 hover:bg-rose-50 rounded-xl transition-all z-10" title="點擊或長按日期以設為停課日"><i className="ph-bold ph-flag text-sm"></i></button>}
-                                                                    
                                                                     <span className={`text-xs font-black mb-1 mt-1 md:mt-0 ${numColor}`}>{d}</span>
-                                                                    
                                                                     {isH ? (<div className="text-center mt-1"><i className="ph-fill ph-tree-palm text-rose-400 text-lg md:text-xl"></i><div className="text-[10px] font-bold text-rose-600 leading-tight mt-1">{ho.desc}</div></div>) : (
                                                                         <div className="flex flex-col items-center gap-1 w-full mt-1">
                                                                             {exams.map((ex,i)=><div key={i} className={`text-[9px] font-black border rounded py-[1px] text-center w-full ${ex.color}`}>{ex.label}{ex.exam}</div>)}
@@ -1530,19 +1285,16 @@
                         </div>
                     </div>
 
-                    {/* 彈出視窗 */}
                     {isModalOpen && (
                         <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-md z-50 flex items-center justify-center p-4">
                             <div className={`bg-white rounded-[48px] shadow-2xl w-full ${modalType==='semesterSettings'||modalType==='editSyllabus'?'max-w-4xl':'max-w-md'} overflow-hidden animate-in flex flex-col max-h-[90vh]`}>
-                                {/* 🌟 核心升級 2：在標題判斷式中加入 'systemSettings'，並修改 semesterSettings 的標題文字 */}
                                 <div className="px-8 py-6 bg-slate-50 border-b flex items-center justify-between shrink-0"><h3 className="font-black text-slate-800 uppercase">{modalType==='addCourse'?'新增課程':modalType==='editCourse'?'編輯課程':modalType==='addClass'?'新增班級':modalType==='editClass'?'編輯班級名稱':modalType==='editSchedule'?'設定課表':modalType==='classJournal'?'教學日誌':modalType==='systemSettings'?'系統設定':modalType==='devicePairing'?'跨裝置同步':modalType==='semesterSettings'?'學校行事曆設定':modalType==='editSyllabus'?'編輯課綱':modalType==='switchSemester'?'切換學期':modalType==='backupRestore'?'資料備份與還原':modalType==='deleteAccount'?'永久刪除帳號':'系統訊息'}</h3><button onClick={()=>setIsModalOpen(false)}><i className="ph-bold ph-x text-xl text-slate-400"></i></button></div>
                                 <div className="p-8 overflow-y-auto">
                                     
-                                    {/* 🌟 核心升級 3：新增「系統設定」的中繼站面板，並套用您設計的樣式 */}
                                     {modalType === 'systemSettings' && (
                                         <div className="space-y-4">
-                                            <button onClick={() => setModalType('backupRestore')} className="w-full py-4 bg-slate-50 text-slate-500 rounded-2xl text-sm font-bold border-2 border-dashed border-slate-300 hover:bg-slate-100 flex justify-center items-center gap-2">
-                                                <i className="ph-bold ph-database text-lg"></i> 資料備份
+                                            <button onClick={() => openModal('backupRestore')} className="w-full py-4 bg-slate-50 text-slate-500 rounded-2xl text-sm font-bold border-2 border-dashed border-slate-300 hover:bg-slate-100 flex justify-center items-center gap-2">
+                                                <i className="ph-bold ph-database text-lg"></i> 資料備份與時光機
                                             </button>
                                             <button onClick={() => setModalType('devicePairing')} className="w-full py-4 bg-indigo-50 text-indigo-600 rounded-2xl text-sm font-bold border-2 border-indigo-200 hover:bg-indigo-100 flex justify-center items-center gap-2">
                                                 <i className="ph-bold ph-device-mobile text-lg"></i> 跨裝置連線
@@ -1576,7 +1328,6 @@
                                             <input type="text" value={formData.name} onChange={(e)=>setFormData({...formData, name:e.target.value})} className="w-full p-4 bg-slate-50 rounded-2xl border-2 font-bold outline-none" placeholder="科目名稱，如: 物理B" />
                                             <div className="flex justify-center gap-2">{THEME_COLORS.map(c=><button key={c.id} onClick={()=>setFormData({...formData, color:c.id})} className={`w-8 h-8 rounded-full ${c.base} ${formData.color===c.id?'ring-4 ring-slate-200':''}`}/>)}</div>
                                             <button onClick={handleSave} className="w-full py-4 bg-indigo-600 text-white font-black rounded-2xl">{modalType === 'editCourse' ? '儲存修改' : '確認新增'}</button>
-                                            
                                             {modalType === 'editCourse' && (
                                                 <button onClick={() => openModal('confirmDelete', { type: 'course', id: formData.courseId, name: formData.name })} className="w-full py-4 bg-rose-50 border-2 border-rose-100 text-rose-500 font-black rounded-2xl hover:bg-rose-500 hover:text-white transition-all flex items-center justify-center gap-2">
                                                     <i className="ph-bold ph-trash"></i> 刪除此課程
@@ -1589,7 +1340,6 @@
                                         <div className="space-y-4">
                                             <input type="text" value={formData.className} onChange={(e)=>setFormData({...formData, className:e.target.value})} className="w-full p-4 bg-slate-50 rounded-2xl border-2 font-bold text-center outline-none" placeholder="班級名稱，如: 電一智" />
                                             <button onClick={handleSave} className="w-full py-4 bg-indigo-600 text-white font-black rounded-2xl">{modalType === 'editClass' ? '儲存修改' : '確認新增'}</button>
-                                            
                                             {modalType === 'editClass' && (
                                                 <button onClick={() => openModal('confirmDelete', { type: 'class', id: formData.classId, courseId: formData.courseId, name: formData.className })} className="w-full py-4 bg-rose-50 border-2 border-rose-100 text-rose-500 font-black rounded-2xl hover:bg-rose-500 hover:text-white transition-all flex items-center justify-center gap-2">
                                                     <i className="ph-bold ph-trash"></i> 刪除此班級
@@ -1628,8 +1378,6 @@
                                             <div className="space-y-2">
                                                 <label className="block text-[11px] font-black text-slate-400 uppercase tracking-widest text-center">請輸入您的 10 碼帳號以確認銷毀</label>
                                                 <input type="number" value={deleteAccountInput} onChange={(e)=>setDeleteAccountInput(e.target.value)} placeholder="手機末 6 碼 + 生日 4 碼" className="w-full p-4 bg-slate-50 border-2 border-slate-200 rounded-2xl font-black outline-none focus:border-rose-400 transition-colors text-center tracking-widest" />
-                                                
-                                                {/* 🌟 核心修復：在刪除帳號面板也加入清晰的具體數字範例 */}
                                                 <p className="text-[10px] text-slate-400 mt-2 font-bold px-1 leading-relaxed text-center">
                                                     💡 範例：手機 0912-345-678，生日 5月12日，請輸入 <span className="text-rose-500 font-black">3456780512</span>。
                                                 </p>
@@ -1675,6 +1423,64 @@
                                         </div>
                                     )}
                                     
+                                    {/* 🌟 核心修改目標：時光機 UI 面板 */}
+                                    {modalType === 'backupRestore' && (
+                                        <div className="space-y-6">
+                                            <div className="bg-indigo-50 p-6 rounded-[32px] border border-indigo-100">
+                                                <h4 className="font-black text-indigo-800 text-lg mb-1 flex items-center gap-2"><i className="ph-fill ph-clock-counter-clockwise"></i> 雙重時光機還原</h4>
+                                                <p className="text-xs text-indigo-600 font-bold mb-4">系統已在背景為您自動建構兩道安全防線</p>
+                                                
+                                                <div className="space-y-4">
+                                                    {/* 防線一 */}
+                                                    <div className="bg-white p-4 rounded-2xl border border-indigo-100 flex justify-between items-center shadow-sm">
+                                                        <div>
+                                                            <div className="text-sm font-black text-slate-700 flex items-center gap-1.5"><i className="ph-bold ph-device-mobile text-indigo-500"></i> 本機深層記憶</div>
+                                                            <div className="text-[10px] text-slate-400 font-bold mt-1">最後殘影: {localBackupTime || '無紀錄'}</div>
+                                                        </div>
+                                                        <button onClick={handleRestoreLocal} disabled={!localBackupTime} className="bg-indigo-500 hover:bg-indigo-600 text-white text-xs font-black px-4 py-2.5 rounded-xl transition-all disabled:opacity-50 disabled:shadow-none shadow-md shadow-indigo-200 active:scale-95">倒轉</button>
+                                                    </div>
+                                                    
+                                                    {/* 防線二 */}
+                                                    <div className="bg-white p-4 rounded-2xl border border-indigo-100 shadow-sm">
+                                                        <div className="text-sm font-black text-slate-700 mb-3 flex items-center gap-1.5"><i className="ph-bold ph-cloud-arrow-down text-sky-500"></i> 雲端自動快照 (保留最近 7 天)</div>
+                                                        <div className="space-y-2 max-h-40 overflow-y-auto pr-1">
+                                                            {Object.keys(cloudBackups).length === 0 ? (
+                                                                <div className="text-center text-xs text-slate-400 font-bold py-3 bg-slate-50 rounded-xl border border-dashed border-slate-200">雲端尚未生成任何快照</div>
+                                                            ) : (
+                                                                Object.keys(cloudBackups).sort((a,b)=>b.localeCompare(a)).map((date, index) => (
+                                                                    <div key={date} className="flex justify-between items-center p-2.5 hover:bg-slate-50 rounded-xl transition-colors group border border-transparent hover:border-slate-100">
+                                                                        <span className="text-xs font-black text-slate-600 flex items-center gap-2">
+                                                                            <span className={`w-1.5 h-1.5 rounded-full ${index === 0 ? 'bg-sky-400' : 'bg-slate-300'}`}></span>
+                                                                            {date} {index === 0 ? '(最新)' : ''}
+                                                                        </span>
+                                                                        <button onClick={() => handleRestoreCloud(date)} className="opacity-0 group-hover:opacity-100 bg-sky-100 hover:bg-sky-500 hover:text-white text-sky-600 text-[10px] font-black px-3 py-1.5 rounded-lg transition-all active:scale-95">還原至此</button>
+                                                                    </div>
+                                                                ))
+                                                            )}
+                                                        </div>
+                                                    </div>
+                                                </div>
+                                            </div>
+                                            
+                                            {/* 保留舊版的手動匯出匯入 (第三重保險) */}
+                                            <div className="flex gap-4 border-t border-slate-100 pt-6">
+                                                <div className="flex-1 bg-slate-50 p-5 rounded-3xl text-center border border-slate-200 hover:shadow-md transition-all">
+                                                    <i className="ph-bold ph-download-simple text-2xl text-slate-400 mb-2"></i>
+                                                    <h4 className="font-black text-slate-700 text-sm">手動下載備份</h4>
+                                                    <button onClick={handleExport} className="mt-3 bg-white border border-slate-300 text-slate-600 px-4 py-2 rounded-xl text-xs font-bold hover:bg-slate-100 w-full active:scale-95">匯出 JSON</button>
+                                                </div>
+                                                <div className="flex-1 bg-slate-50 p-5 rounded-3xl text-center border border-slate-200 hover:shadow-md transition-all">
+                                                    <i className="ph-bold ph-upload-simple text-2xl text-slate-400 mb-2"></i>
+                                                    <h4 className="font-black text-slate-700 text-sm">從檔案還原</h4>
+                                                    <label className="mt-3 bg-white border border-slate-300 text-slate-600 px-4 py-2 rounded-xl text-xs font-bold hover:bg-slate-100 w-full block cursor-pointer active:scale-95">
+                                                        上傳 JSON
+                                                        <input type="file" accept=".json" className="hidden" onChange={handleImport} />
+                                                    </label>
+                                                </div>
+                                            </div>
+                                        </div>
+                                    )}
+
                                     {modalType === 'classJournal' && (
                                         <div className="space-y-4">
                                             {editingCell?.block?.length > 1 && (
@@ -1729,17 +1535,11 @@
                                                     <div className="flex gap-3 mt-4">
                                                         {hasExistingLog && (
                                                             <button onClick={() => {
-                                                                const newData = { ...data };
-                                                                const semester = newData[selectedYear][selectedSemester];
+                                                                const newData = { ...data }; const semester = newData[selectedYear][selectedSemester];
                                                                 const cls = semester.courses.find(c => c.classes.some(cl => cl.id === editingCell.classId)).classes.find(cl => cl.id === editingCell.classId);
-                                                                
                                                                 const periodsToDelete = (formData.isConsecutiveLog && editingCell.block?.length > 1) ? editingCell.block : [editingCell.period];
-                                                                
                                                                 cls.logs = cls.logs.filter(l => !(l.date === editingCell.date && periodsToDelete.includes(l.period)));
-                                                                
-                                                                // 🌟 替換為 updateLocalData
-                                                                updateLocalData(newData);
-                                                                setIsModalOpen(false);
+                                                                updateLocalData(newData); setIsModalOpen(false);
                                                             }} className="w-1/3 py-4 bg-rose-50 border-2 border-rose-100 text-rose-500 font-black rounded-2xl hover:bg-rose-500 hover:text-white transition-all flex items-center justify-center gap-1">
                                                                 <i className="ph-bold ph-trash text-lg"></i> <span className="hidden sm:inline">刪除</span>
                                                             </button>
@@ -1780,7 +1580,6 @@
                                                     {['exam1','exam2','exam3'].map(k=>{ 
                                                         const dates = formData.examData[activeSettingTab][k] || [];
                                                         return (
-                                                            // 🌟 核心升級：加裝「自動導航雷達」。點擊按鈕時，若該段考已有日期，則自動抓取第一個日期的年月並進行跳轉。
                                                             <button key={k} onClick={() => {
                                                                 setActiveExamKey(k);
                                                                 if (dates.length > 0) {
@@ -1811,10 +1610,8 @@
                                                                     for(let d=1; d<=days; d++) { 
                                                                         const ds = `${viewDate.getFullYear()}-${(viewDate.getMonth()+1).toString().padStart(2,'0')}-${d.toString().padStart(2,'0')}`; 
                                                                         const sel = (formData.examData[activeSettingTab][activeExamKey] || []).includes(ds); 
-                                                                        
                                                                         const currentDayIndex = new Date(viewDate.getFullYear(), viewDate.getMonth(), d).getDay();
                                                                         const defaultColor = currentDayIndex === 0 ? 'text-red-500 bg-red-50/50' : currentDayIndex === 6 ? 'text-blue-500 bg-blue-50/50' : 'text-slate-600 hover:bg-white';
-
                                                                         grid.push(<button key={d} onClick={() => toggleDateInExam(ds)} className={`aspect-square text-[10px] font-bold rounded-lg transition-all ${sel ? 'bg-indigo-600 text-white shadow-md scale-110' : defaultColor}`}>{d}</button>); 
                                                                     } return grid; 
                                                                 })()}
@@ -1856,8 +1653,6 @@
                                             <button onClick={handleSave} className="w-full py-4 bg-indigo-600 text-white font-black rounded-2xl mt-4">儲存課綱</button>
                                         </div>
                                     )}
-
-                                    {modalType === 'backupRestore' && (<div className="space-y-6"><div className="bg-sky-50 p-6 rounded-[32px] text-center"><i className="ph-bold ph-download-simple text-4xl text-sky-500 mb-2"></i><h4 className="font-black">下載備份檔</h4><p className="text-xs text-slate-500 mb-4">將所有設定下載為 JSON</p><button onClick={handleExport} className="bg-sky-500 text-white px-6 py-3 rounded-xl font-bold">匯出</button></div><div className="bg-rose-50 p-6 rounded-[32px] text-center relative"><i className="ph-bold ph-upload-simple text-4xl text-rose-500 mb-2"></i><h4 className="font-black">還原備份檔</h4><p className="text-xs text-rose-400 mb-4">⚠️ 將覆蓋目前所有資料</p><label className="bg-rose-500 text-white px-6 py-3 rounded-xl font-bold cursor-pointer">匯入<input type="file" accept=".json" className="hidden" onChange={handleImport} /></label></div></div>)}
                                     
                                     {modalType === 'editHoliday' && (
                                         <div className="space-y-4 text-center">
@@ -1865,7 +1660,6 @@
                                             <h4 className="font-black text-lg">{formData.holidayDate} 停課設定</h4>
                                             <input type="text" value={formData.holidayDesc} onChange={(e)=>setFormData({...formData, holidayDesc:e.target.value})} className="w-full p-4 border-2 border-rose-100 rounded-2xl outline-none text-center bg-rose-50 text-rose-700 font-bold" placeholder="例如: 校慶補假"/>
                                             <div className="flex gap-3">
-                                                {/* 🌟 替換為 updateLocalData */}
                                                 <button onClick={()=>{const n={...data};n[selectedYear][selectedSemester].settings.holidays=(n[selectedYear][selectedSemester].settings.holidays||[]).filter(h=>(typeof h==='string'?h:h.date)!==formData.holidayDate);updateLocalData(n);setIsModalOpen(false);}} className="flex-1 py-4 bg-slate-100 text-rose-400 font-black rounded-2xl hover:bg-rose-50 flex justify-center items-center gap-2"><i className="ph-bold ph-trash"></i> 刪除此停課日</button>
                                                 <button onClick={handleSave} className="flex-1 py-4 bg-rose-500 text-white font-black rounded-2xl">儲存設定</button>
                                             </div>
