@@ -56,8 +56,8 @@
 
     <script type="text/babel">
         const { useState, useEffect, useMemo, Fragment } = React;
-        // 🌟 [核心修改目標] 升級版本號
-        const APP_VERSION = "v11.1.0 (雙重時光機自動備份版)"; 
+        // 🌟 [修改目標] 更新版本號
+        const APP_VERSION = "v11.1.1 (修復多裝置連線覆寫Bug)"; 
 
         const THEME_COLORS = [
             { id: 'sky', name: '晴空水藍', h: 199, s: 89, base: 'bg-sky-400', light: 'bg-sky-50', text: 'text-sky-800' },
@@ -187,8 +187,15 @@
                 const unsub = window.firebase.onSnapshot(docRef, 
                     (docSnap) => {
                         const cloudData = docSnap.data();
-                        if (cloudData && cloudData.appData) setData(prev => JSON.stringify(prev) === JSON.stringify(cloudData.appData) ? prev : cloudData.appData);
-                        else window.firebase.setDoc(docRef, { appData: initialData }, { merge: true }).catch(()=>{});
+                        
+                        // 🌟 [核心修改目標] 移除致命的「自動覆寫」機制。
+                        // 舊版寫法：else window.firebase.setDoc(docRef, { appData: initialData }, { merge: true })
+                        // 這會導致手機一打開，因為網路延遲讀不到資料，就立刻把「空白資料」推上雲端，導致電腦端跟著被洗白！
+                        if (cloudData && cloudData.appData) {
+                            setData(prev => JSON.stringify(prev) === JSON.stringify(cloudData.appData) ? prev : cloudData.appData);
+                        } else {
+                            setData(initialData); // 只在本地顯示空白，絕對不主動去覆寫雲端金庫！
+                        }
                         
                         // ==========================================
                         // ☁️ 防線二：雲端每日快照與 7 天淘汰輸送帶
