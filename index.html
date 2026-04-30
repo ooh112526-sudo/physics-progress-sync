@@ -57,7 +57,7 @@
     <script type="text/babel">
         const { useState, useEffect, useMemo, Fragment } = React;
         // 🌟 [修改目標] 更新版本號
-        const APP_VERSION = "v11.1.1 (修復多裝置連線覆寫Bug)"; 
+        const APP_VERSION = "v11.1.2 (動態段考倒數修復)"; 
 
         const THEME_COLORS = [
             { id: 'sky', name: '晴空水藍', h: 199, s: 89, base: 'bg-sky-400', light: 'bg-sky-50', text: 'text-sky-800' },
@@ -1005,7 +1005,16 @@
                                                     <div className="flex items-center gap-3 mt-1">
                                                         <p className="text-sm text-slate-500 font-medium">共 {currentCourse.classes?.length||0} 個班級</p>
                                                         <span className="w-1.5 h-1.5 rounded-full bg-slate-300"></span>
-                                                        <p className="text-sm text-indigo-500 font-bold flex items-center gap-1 hidden sm:flex"><i className="ph-fill ph-shield-warning text-base"></i> 段考倒數：{formatDatesForDisplay(currentCourse.system === '技高三' ? currentSemesterData.settings.v3.exam1 : currentCourse.system === '綜高三' ? currentSemesterData.settings.s3.exam1 : currentSemesterData.settings.common.exam1)}</p>
+                                                        <p className="text-sm text-indigo-500 font-bold flex items-center gap-1 hidden sm:flex">
+                                                            <i className="ph-fill ph-shield-warning text-base"></i>
+                                                            {(() => {
+                                                                // 🌟 [核心修改目標] 呼叫時間雷達，並動態顯示對應的「段考標題」與「日期」
+                                                                const activeEx = getCurrentExamTrack(currentCourse, currentSemesterData.settings);
+                                                                const sysTrack = currentCourse.system === '技高三' ? 'v3' : currentCourse.system === '綜高三' ? 's3' : 'common';
+                                                                const exLabel = activeEx === 'exam1' ? '一段' : activeEx === 'exam2' ? '二段' : '三段';
+                                                                return `${exLabel}倒數：${formatDatesForDisplay(currentSemesterData.settings[sysTrack]?.[activeEx])}`;
+                                                            })()}
+                                                        </p>
                                                     </div>
                                                 </div>
 
