@@ -10,6 +10,15 @@
     <script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
     <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
     
+    <!-- 🌟 終極修復核心：強制 Babel 翻譯機使用「傳統模式」，絕對禁止它自作主張產生 import 導致白畫面 -->
+    <script>
+        Babel.registerPreset("react-classic", {
+            presets: [
+                [Babel.availablePresets.react, { "runtime": "classic" }]
+            ]
+        });
+    </script>
+    
     <!-- 引入 Tailwind CSS -->
     <script src="https://cdn.tailwindcss.com"></script>
     <!-- 引入 Phosphor Icons -->
@@ -55,10 +64,10 @@
         } catch (e) { console.error("Firebase Init Error:", e); }
     </script>
 
-    <!-- ⚠️ 區塊二：React 介面引擎 (🌟 核心修復：拿掉導致 JSX 崩潰的 data-type 屬性) -->
-    <script type="text/babel">
+    <!-- ⚠️ 區塊二：React 介面引擎 (🌟 綁定剛剛建立的 react-classic 傳統模式) -->
+    <script type="text/babel" data-presets="react-classic">
         const { useState, useEffect, useMemo, Fragment } = React;
-        const APP_VERSION = "v11.1.4 (修復 JSX-Runtime 白畫面)"; 
+        const APP_VERSION = "v11.1.5 (終極穩定版 - 根除白畫面)"; 
 
         const THEME_COLORS = [
             { id: 'sky', name: '晴空水藍', h: 199, s: 89, base: 'bg-sky-400', light: 'bg-sky-50', text: 'text-sky-800' },
