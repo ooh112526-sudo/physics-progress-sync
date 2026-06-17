@@ -55,10 +55,10 @@
         } catch (e) { console.error("Firebase Init Error:", e); }
     </script>
 
-    <!-- ⚠️ 區塊二：React 介面引擎 (🌟已加上 data-type="module" 防護金鐘罩) -->
-    <script type="text/babel" data-type="module">
+    <!-- ⚠️ 區塊二：React 介面引擎 (🌟 核心修復：拿掉導致 JSX 崩潰的 data-type 屬性) -->
+    <script type="text/babel">
         const { useState, useEffect, useMemo, Fragment } = React;
-        const APP_VERSION = "v11.1.3 (白畫面語法防護版)"; 
+        const APP_VERSION = "v11.1.4 (修復 JSX-Runtime 白畫面)"; 
 
         const THEME_COLORS = [
             { id: 'sky', name: '晴空水藍', h: 199, s: 89, base: 'bg-sky-400', light: 'bg-sky-50', text: 'text-sky-800' },
